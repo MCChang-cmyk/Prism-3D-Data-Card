@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { background-color: #0f172a; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        #card-container { 
+            width: 500px; 
+            height: 500px; 
+            border: 2px solid #1e293b; 
+            background: #020617;
+            position: relative;
+        }
+    </style>
+</head>
+<body>
+    <div id="card-container"></div>
+    
+    <script type="module" src="./prism-3d-card.js"></script>
+
+    <script type="module">
+        customElements.whenDefined('prism-3d-card').then(() => {
+            console.log("組件已註冊");
+            const container = document.getElementById('card-container');
+            const card = document.createElement('prism-3d-card');
+            
+            card.setConfig({
+                height: "500px",
+                entities: [
+                    { entity: 's1', name: '九層塔', max: 100 },
+                    { entity: 's2', name: '龜背竹', max: 100 },
+                    { entity: 's3', name: '濕度', max: 100 },
+                    { entity: 's4', name: '陽光', max: 100 },
+                    { entity: 's5', name: '電量', max: 100 }
+                ]
+            });
+            
+            card.hass = {
+                states: {
+                    's1': { state: '85' },
+                    's2': { state: '40' },
+                    's3': { state: '70' },
+                    's4': { state: '30' },
+                    's5': { state: '95' }
+                }
+            };
+            
+            container.appendChild(card);
+        }).catch(err => console.error("發生錯誤:", err));
+    </script>
+</body>
+</html>
