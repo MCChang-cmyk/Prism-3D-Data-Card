@@ -11,24 +11,29 @@ class Prism3DCard extends HTMLElement {
   }
 
   setConfig(config) {
-    if (!config.entities || config.entities.length < 3) {
-      throw new Error("請至少設定 3 個實體以形成 3D 稜鏡效果。");
-    }
     this.config = config;
   }
 
   _initChart() {
+    if (this.shadowRoot) return;
+    
     this.attachShadow({ mode: 'open' });
     const container = document.createElement('div');
     container.style.width = '100%';
     container.style.height = this.config.height || '350px';
+    container.style.background = 'transparent';
     this.shadowRoot.appendChild(container);
 
     this.chart = echarts.init(container);
     this._updateData();
+    
+    // 監聽視窗縮放
+    window.addEventListener('resize', () => this.chart.resize());
   }
 
   _updateData() {
+    if (!this._hass || !this.config.entities) return;
+
     const dataValues = this.config.entities.map(ent => {
       const state = this._hass.states[ent.entity];
       return state ? parseFloat(state.state) : 0;
@@ -36,39 +41,63 @@ class Prism3DCard extends HTMLElement {
 
     const indicators = this.config.entities.map(ent => ({
       name: ent.name || ent.entity,
-      max: ent.max || 100
+      max: ent.max || 100,
+      color: '#94a3b8'
     }));
 
     const option = {
       backgroundColor: 'transparent',
+      tooltip: { show: true },
       radar: {
         indicator: indicators,
         shape: 'polygon',
-        splitNumber: 5,
-        axisName: { color: '#94a3b8' },
-        splitLine: {
-          lineStyle: { color: 'rgba(255, 255, 255, 0.1)' }
+        splitNumber: 4,
+        radius: '70%',
+        axisName: {
+          fontSize: 12,
+          fontWeight: 'bold',
+          color: '#cbd5e1',
+          formatter: (value) => value.toUpperCase()
         },
-        splitArea: { show: false },
+        splitLine: {
+          lineStyle: { color: 'rgba(255, 255, 255, 0.05)', width: 1 }
+        },
+        splitArea: {
+          show: true,
+          areaStyle: { color: ['rgba(255,255,255,0.02)', 'transparent'] }
+        },
         axisLine: {
-          lineStyle: { color: 'rgba(255, 255, 255, 0.2)' }
+          lineStyle: { color: 'rgba(255, 255, 255, 0.1)' }
         }
       },
       series: [{
         type: 'radar',
+        emphasis: { lineStyle: { width: 4 } },
         data: [{
           value: dataValues,
-          name: '數據指標',
-          symbol: 'none',
+          symbol: 'circle',
+          symbolSize: 4,
+          itemStyle: { color: '#5eead4' },
           areaStyle: {
-            color: new echarts.graphic.RadialGradient(0.5, 0.5, 1, [
+            // 關鍵：模擬 3D 摺紙的漸層光澤
+            color: new echarts.graphic.RadialGradient(0.5, 0.5, 0.8, [
               { offset: 0, color: 'rgba(94, 234, 212, 0.1)' },
-              { offset: 1, color: 'rgba(94, 234, 212, 0.8)' }
+              { offset: 0.5, color: 'rgba(45, 212, 191, 0.4)' },
+              { offset: 1, color: 'rgba(20, 184, 166, 0.9)' }
             ]),
-            opacity: 0.8
+            shadowBlur: 15,
+            shadowColor: 'rgba(0, 0, 0, 0.5)',
+            shadowOffsetY: 10
           },
-          lineStyle: { width: 0 }
-        }]
+          lineStyle: {
+            color: '#5eead4',
+            width: 2,
+            type: 'solid'
+          }
+        }],
+        // 啟用平滑動畫
+        animationDuration: 1500,
+        animationEasing: 'cubicOut'
       }]
     };
 
