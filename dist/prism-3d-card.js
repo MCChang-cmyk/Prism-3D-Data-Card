@@ -52,12 +52,16 @@ class Prism3DCard extends HTMLElement {
         indicator: indicators,
         shape: 'polygon',
         splitNumber: 4,
-        radius: '70%',
+        // --- 優化部分 ---
+        radius: '80%',        // 增加半徑，原本預設較小
+        center: ['50%', '50%'], // 確保居中
+        // ----------------
         axisName: {
-          fontSize: 12,
+          fontSize: 14,       // 稍微放大文字
           fontWeight: 'bold',
           color: '#cbd5e1',
-          formatter: (value) => value.toUpperCase()
+          overflow: 'break',  // 防止標籤被裁切
+          formatter: (value) => value
         },
         splitLine: {
           lineStyle: { color: 'rgba(255, 255, 255, 0.05)', width: 1 }
