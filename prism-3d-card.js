@@ -1,6 +1,5 @@
 import "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js";
 
-// --- 1. 編輯器類別 (原生樣式優化版) ---
 class Prism3DCardEditor extends HTMLElement {
   setConfig(config) {
     this._config = config;
@@ -12,70 +11,62 @@ class Prism3DCardEditor extends HTMLElement {
   }
 
   _render() {
-    if (!this._config || !this._hass || this._rendered) return;
+    if (!this._config || !this._hass) return;
+    
+    // 如果已經畫過了，就只更新數據，不重畫 innerHTML（避免選單消失）
+    if (this._firstRendered) {
+        this._updateEntitiesUI();
+        return;
+    }
 
     this.innerHTML = `
       <div class="card-config" style="padding: 16px; display: flex; flex-direction: column; gap: 20px;">
-        
-        <ha-textfield
-          id="color-input"
-          label="主色調 (Hex Code)"
-          .value="${this._config.color || '#E13460'}"
-          style="width: 100%;"
-        ></ha-textfield>
-
+        <ha-textfield id="color-input" label="主色調 (Hex Code)" .value="${this._config.color || '#E13460'}" style="width: 100%;"></ha-textfield>
         <div style="display: flex; align-items: center; justify-content: space-between;">
-          <span style="font-size: 16px;">啟動 3D 體積感</span>
-          <ha-switch
-            id="mode-switch"
-            .checked="${this._config.mode !== '2d'}"
-          ></ha-switch>
+          <span>啟動 3D 體積感</span>
+          <ha-switch id="mode-switch" .checked="${this._config.mode !== '2d'}"></ha-switch>
         </div>
-
         <div style="border-top: 1px solid var(--divider-color); padding-top: 16px;">
-          <p style="font-weight: 500; margin-bottom: 12px; font-size: 14px; opacity: 0.7;">實體配置 (建議 3-6 個)</p>
+          <p style="font-weight: 500; margin-bottom: 12px;">實體配置 (建議 3-6 個)</p>
           <div id="entities-container"></div>
-          
-          <mwc-button id="add-entity-btn" style="width: 100%; margin-top: 8px;">
+          <mwc-button id="add-entity-btn" style="width: 100%; margin-top: 12px;">
             <ha-icon icon="mdi:plus" style="margin-right: 8px;"></ha-icon>新增實體
           </mwc-button>
         </div>
       </div>
     `;
 
-    // 重新繪製實體列表 (處理 Picker 數據綁定)
-    this._renderEntities();
-
-    // 綁定基礎事件
     this.querySelector('#color-input').addEventListener('input', (ev) => this._updateConfig('color', ev.target.value));
     this.querySelector('#mode-switch').addEventListener('change', (ev) => this._updateConfig('mode', ev.target.checked ? '3d' : '2d'));
     this.querySelector('#add-entity-btn').addEventListener('click', () => this._addEntity());
 
-    this._rendered = true;
+    this._firstRendered = true;
+    this._updateEntitiesUI();
   }
 
-  _renderEntities() {
+  _updateEntitiesUI() {
     const container = this.querySelector('#entities-container');
     if (!container) return;
+    
+    // 清除舊內容並重新生成，這對 Picker 比較穩定
     container.innerHTML = '';
-
     (this._config.entities || []).forEach((ent, idx) => {
       const row = document.createElement('div');
-      row.style.display = 'flex';
-      row.style.alignItems = 'center';
-      row.style.gap = '8px';
-      row.style.marginBottom = '8px';
+      row.style.cssText = "display: flex; align-items: center; gap: 8px; margin-bottom: 8px;";
 
       const picker = document.createElement('ha-entity-picker');
       picker.hass = this._hass;
       picker.value = ent.entity;
-      picker.setAttribute('label', `實體 ${idx + 1}`);
-      picker.style.flexGrow = '1';
-      picker.addEventListener('value-changed', (ev) => this._entityChanged(idx, ev.detail.value));
+      picker.label = `實體 ${idx + 1}`;
+      picker.style.flexGrow = "1";
+      picker.addEventListener('value-changed', (ev) => {
+          if (ev.detail.value === ent.entity) return;
+          this._entityChanged(idx, ev.detail.value);
+      });
 
       const removeBtn = document.createElement('ha-icon-button');
       removeBtn.innerHTML = '<ha-icon icon="mdi:close"></ha-icon>';
-      removeBtn.style.color = 'var(--error-color)';
+      removeBtn.style.color = "var(--error-color)";
       removeBtn.addEventListener('click', () => this._removeEntity(idx));
 
       row.appendChild(picker);
@@ -88,19 +79,16 @@ class Prism3DCardEditor extends HTMLElement {
     const newEnts = [...this._config.entities];
     newEnts[index] = { ...newEnts[index], entity: newValue };
     this._updateConfig('entities', newEnts);
-    this._rendered = false; // 強制下次更新重繪
   }
 
   _addEntity() {
     const newEnts = [...(this._config.entities || []), { entity: '', name: '', max: 100 }];
     this._updateConfig('entities', newEnts);
-    this._rendered = false;
   }
 
   _removeEntity(index) {
     const newEnts = this._config.entities.filter((_, i) => i !== index);
     this._updateConfig('entities', newEnts);
-    this._rendered = false;
   }
 
   _updateConfig(prop, value) {
@@ -113,56 +101,64 @@ class Prism3DCardEditor extends HTMLElement {
   }
 }
 
-// --- 2. 主卡片類別 (Main Card) ---
 class Prism3DCard extends HTMLElement {
   static getConfigElement() { return document.createElement("prism-3d-card-editor"); }
   static getStubConfig() { return { mode: "3d", color: "#E13460", radius: "65%", entities: [] }; }
 
   set hass(hass) {
     this._hass = hass;
-    if (!this.chart) { this._initChart(); } else { this._updateData(); }
+    if (this.chart) this._updateData();
   }
 
-  setConfig(config) { this.config = config; }
+  setConfig(config) {
+    this.config = config;
+  }
+
+  connectedCallback() {
+    this._initChart();
+  }
 
   _initChart() {
-    if (this.shadowRoot && this.shadowRoot.querySelector('div')) return;
-    const root = this.shadowRoot || this.attachShadow({ mode: 'open' });
+    if (this.shadowRoot) return;
+    const root = this.attachShadow({ mode: 'open' });
     const container = document.createElement('div');
-    container.style.width = '100%';
-    container.style.height = this.config.height || '350px';
+    container.style.cssText = "width: 100%; height: 350px; display: block;";
     root.appendChild(container);
 
     setTimeout(() => {
-      if (container) {
         this.chart = echarts.init(container);
         this._updateData();
-      }
-    }, 0);
+        // 解決編輯器開啟時圖表變小的關鍵
+        const resizeObserver = new ResizeObserver(() => this.chart.resize());
+        resizeObserver.observe(container);
+    }, 100);
   }
 
   _updateData() {
     if (!this._hass || !this.config.entities || !this.chart) return;
+    
     const dataValues = this.config.entities.map(ent => {
       const state = this._hass.states[ent.entity];
       return state ? parseFloat(state.state) || 0 : 0;
     });
+
     const indicators = this.config.entities.map(ent => ({
       name: (ent.name || ent.entity.split('.')[1] || ent.entity).toUpperCase(),
       max: ent.max || 100
     }));
+
     const is3D = this.config.mode !== '2d';
     const mainColor = this.config.color || '#E13460';
 
-    const option = {
+    this.chart.setOption({
       backgroundColor: 'transparent',
       animation: false,
       radar: {
         indicator: indicators,
         shape: 'polygon',
-        radius: this.config.radius || '65%',
+        radius: '65%',
         center: ['50%', '50%'],
-        axisName: { fontSize: 11, fontWeight: 'bold', color: '#cbd5e1' },
+        axisName: { fontSize: 10, fontWeight: 'bold', color: '#cbd5e1' },
         splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } },
         axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.1)' } }
       },
@@ -184,8 +180,7 @@ class Prism3DCard extends HTMLElement {
           }
         }]
       }]
-    };
-    this.chart.setOption(option);
+    });
   }
 
   _hexToRgba(hex, opacity) {
@@ -199,7 +194,6 @@ class Prism3DCard extends HTMLElement {
   }
 }
 
-// --- 3. 註冊 ---
 customElements.define("prism-3d-card-editor", Prism3DCardEditor);
 customElements.define("prism-3d-card", Prism3DCard);
 
