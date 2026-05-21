@@ -12,71 +12,63 @@ class Prism3DCardEditor extends HTMLElement {
   }
 
   _render() {
-    // 1. 防錯保護：如果 config 還沒準備好，就先顯示載入中或跳過
     if (!this._config) return;
 
-    // 2. 避免重複渲染，但如果需要更新 UI 則允許執行
+    // 定義主色與模式
+    const mainColor = this._config.color || '#E13460';
+    const is3D = this._config.mode !== '2d';
+
     this.innerHTML = `
-      <div id="editor-container" style="display: flex; flex-direction: column; gap: 16px; color: var(--primary-text-color); padding: 10px;">
+      <div id="editor-container" style="display: flex; flex-direction: column; gap: 20px; color: var(--primary-text-color); padding: 10px;">
         
         <div class="config-item">
-          <label style="display: block; margin-bottom: 8px; font-weight: bold;">主色調</label>
-          <input type="color" id="color-picker" 
-            value="${this._config.color || '#E13460'}" 
-            style="width: 100%; height: 40px; border: 2px solid var(--divider-color); border-radius: 4px; cursor: pointer; background: none;">
+          <label style="display: block; margin-bottom: 10px; font-weight: bold;">主色調 (Hex Code)</label>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div id="color-preview" style="width: 40px; height: 40px; border-radius: 4px; background: ${mainColor}; border: 2px solid var(--divider-color);"></div>
+            <input type="text" id="color-hex-input" 
+              value="${mainColor}" 
+              placeholder="#E13460"
+              style="flex-grow: 1; padding: 10px; border-radius: 4px; border: 1px solid var(--divider-color); background: var(--card-background-color); color: var(--primary-text-color); font-family: monospace;">
+          </div>
         </div>
         
-        <div class="config-item">
-          <label style="display: block; margin-bottom: 8px; font-weight: bold;">顯示模式</label>
-          <select id="mode-select" style="width: 100%; padding: 10px; border-radius: 4px; background: var(--card-background-color); color: var(--primary-text-color); border: 1px solid var(--divider-color);">
-            <option value="3d" ${this._config.mode !== '2d' ? 'selected' : ''}>3D 立體</option>
-            <option value="2d" ${this._config.mode === '2d' ? 'selected' : ''}>2D 平面</option>
-          </select>
+        <div class="config-item" style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px;">
+          <label style="font-weight: bold; cursor: pointer;" for="mode-checkbox">啟動 3D 體積感</label>
+          <input type="checkbox" id="mode-checkbox" ${is3D ? 'checked' : ''} style="width: 20px; height: 20px; cursor: pointer;">
         </div>
 
-        <div class="config-item" style="border-top: 1px solid var(--divider-color); pt-10px; margin-top: 10px;">
+        <div class="config-item" style="border-top: 1px solid var(--divider-color); padding-top: 15px;">
           <label style="display: block; margin-bottom: 8px; font-weight: bold;">數據配置</label>
-          <p style="font-size: 13px; opacity: 0.8; line-height: 1.4;">
-            請點擊下方的 <strong>「顯示代碼編輯器」</strong> 來新增或修改實體 (Entities)。<br>
-            範例格式：<br>
-            <code style="background: rgba(0,0,0,0.2); padding: 2px 4px;">- entity: sensor.your_sensor</code>
+          <p style="font-size: 13px; opacity: 0.8; line-height: 1.6;">
+            目前請點擊左下角 <strong style="color: var(--primary-color);">「使用文字編輯器」</strong> 進行實體配置。
           </p>
+          <pre style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 4px; font-size: 12px; color: #5eead4;">
+entities:
+  - entity: sensor.your_sensor
+    name: 名稱
+    max: 100</pre>
         </div>
       </div>
     `;
 
-    // 監聽事件
-    this.querySelector('#color-picker').addEventListener('input', (ev) => this._updateConfig('color', ev.target.value));
-    this.querySelector('#mode-select').addEventListener('change', (ev) => this._updateConfig('mode', ev.target.value));
-  }
-
-  _updateConfig(prop, value) {
-    const event = new CustomEvent("config-changed", {
-      detail: { config: { ...this._config, [prop]: value } },
-      bubbles: true,
-      composed: true,
+    // --- 事件綁定 ---
+    
+    // 1. Hex 輸入監聽
+    const hexInput = this.querySelector('#color-hex-input');
+    hexInput.addEventListener('input', (ev) => {
+        const value = ev.target.value;
+        // 簡單驗證 Hex 格式
+        if (/^#[0-9A-F]{6}$/i.test(value) || /^#[0-9A-F]{3}$/i.test(value)) {
+            this.querySelector('#color-preview').style.background = value;
+            this._updateConfig('color', value);
+        }
     });
-    this.dispatchEvent(event);
-  }
-}
 
-// --- 2. 主卡片類別 (Main Card) ---
-class Prism3DCard extends HTMLElement {
-  // 讓 HA 知道編輯器是誰
-  static getConfigElement() {
-    return document.createElement("prism-3d-card-editor");
-  }
-
-  // 設定預設值
-  static getStubConfig() {
-    return {
-      mode: "3d",
-      color: "#E13460",
-      radius: "65%",
-      entities: [
-        { entity: "sun.sun", name: "範例數據", max: 100 }
-      ]
-    };
+    // 2. Checkbox 監聽
+    const modeCheckbox = this.querySelector('#mode-checkbox');
+    modeCheckbox.addEventListener('change', (ev) => {
+        this._updateConfig('mode', ev.target.checked ? '3d' : '2d');
+    });
   }
 
   set hass(hass) {
