@@ -1,5 +1,6 @@
 import "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js";
 
+// --- 1. 編輯器類別 (GUI Editor) ---
 class Prism3DCardEditor extends HTMLElement {
   setConfig(config) {
     this._config = config;
@@ -11,84 +12,86 @@ class Prism3DCardEditor extends HTMLElement {
   }
 
   _render() {
-    if (!this._config || !this._hass) return;
-    
-    // 如果已經畫過了，就只更新數據，不重畫 innerHTML（避免選單消失）
-    if (this._firstRendered) {
-        this._updateEntitiesUI();
-        return;
-    }
+    if (!this._config) return;
+
+    const mainColor = this._config.color || '#E13460';
+    const is3D = this._config.mode !== '2d';
 
     this.innerHTML = `
-      <div class="card-config" style="padding: 16px; display: flex; flex-direction: column; gap: 20px;">
-        <ha-textfield id="color-input" label="主色調 (Hex Code)" .value="${this._config.color || '#E13460'}" style="width: 100%;"></ha-textfield>
-        <div style="display: flex; align-items: center; justify-content: space-between;">
-          <span>啟動 3D 體積感</span>
-          <ha-switch id="mode-switch" .checked="${this._config.mode !== '2d'}"></ha-switch>
+      <div id="editor-container" style="display: flex; flex-direction: column; gap: 20px; color: var(--primary-text-color); padding: 10px;">
+        
+        <div class="config-item">
+          <label style="display: block; margin-bottom: 10px; font-weight: bold;">主色調 (Hex Code)</label>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div id="color-preview" style="width: 40px; height: 40px; border-radius: 4px; background: ${mainColor}; border: 2px solid var(--divider-color);"></div>
+            <input type="text" id="color-hex-input" 
+              value="${mainColor}" 
+              placeholder="#E13460"
+              style="flex-grow: 1; padding: 10px; border-radius: 4px; border: 1px solid var(--divider-color); background: var(--card-background-color); color: var(--primary-text-color); font-family: monospace;">
+          </div>
         </div>
-        <div style="border-top: 1px solid var(--divider-color); padding-top: 16px;">
-          <p style="font-weight: 500; margin-bottom: 12px;">實體配置 (建議 3-6 個)</p>
-          <div id="entities-container"></div>
-          <mwc-button id="add-entity-btn" style="width: 100%; margin-top: 12px;">
-            <ha-icon icon="mdi:plus" style="margin-right: 8px;"></ha-icon>新增實體
-          </mwc-button>
+        
+        <div class="config-item" style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px;">
+          <label style="font-weight: bold; cursor: pointer;" for="mode-checkbox">啟動 3D 體積感</label>
+          <input type="checkbox" id="mode-checkbox" ${is3D ? 'checked' : ''} style="width: 24px; height: 24px; cursor: pointer;">
+        </div>
+
+        <div class="config-item" style="border-top: 1px solid var(--divider-color); padding-top: 15px;">
+          <label style="display: block; margin-bottom: 10px; font-weight: bold;">實體配置 (Entities)</label>
+          <div id="entities-list" style="display: flex; flex-direction: column; gap: 10px;">
+            ${(this._config.entities || []).map((ent, idx) => `
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <input type="text" class="entity-input" data-index="${idx}" value="${ent.entity}" placeholder="sensor.example"
+                  style="flex: 1; padding: 8px; border-radius: 4px; border: 1px solid var(--divider-color); background: var(--card-background-color); color: var(--primary-text-color);">
+                <button class="remove-ent" data-index="${idx}" style="background: none; border: none; color: #ff5252; cursor: pointer; font-size: 18px;">✕</button>
+              </div>
+            `).join('')}
+          </div>
+          <button id="add-ent" style="margin-top: 12px; width: 100%; padding: 10px; background: var(--primary-color); color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">+ 新增實體</button>
         </div>
       </div>
     `;
 
-    this.querySelector('#color-input').addEventListener('input', (ev) => this._updateConfig('color', ev.target.value));
-    this.querySelector('#mode-switch').addEventListener('change', (ev) => this._updateConfig('mode', ev.target.checked ? '3d' : '2d'));
-    this.querySelector('#add-entity-btn').addEventListener('click', () => this._addEntity());
+    // --- 事件綁定 ---
 
-    this._firstRendered = true;
-    this._updateEntitiesUI();
-  }
-
-  _updateEntitiesUI() {
-    const container = this.querySelector('#entities-container');
-    if (!container) return;
-    
-    // 清除舊內容並重新生成，這對 Picker 比較穩定
-    container.innerHTML = '';
-    (this._config.entities || []).forEach((ent, idx) => {
-      const row = document.createElement('div');
-      row.style.cssText = "display: flex; align-items: center; gap: 8px; margin-bottom: 8px;";
-
-      const picker = document.createElement('ha-entity-picker');
-      picker.hass = this._hass;
-      picker.value = ent.entity;
-      picker.label = `實體 ${idx + 1}`;
-      picker.style.flexGrow = "1";
-      picker.addEventListener('value-changed', (ev) => {
-          if (ev.detail.value === ent.entity) return;
-          this._entityChanged(idx, ev.detail.value);
-      });
-
-      const removeBtn = document.createElement('ha-icon-button');
-      removeBtn.innerHTML = '<ha-icon icon="mdi:close"></ha-icon>';
-      removeBtn.style.color = "var(--error-color)";
-      removeBtn.addEventListener('click', () => this._removeEntity(idx));
-
-      row.appendChild(picker);
-      row.appendChild(removeBtn);
-      container.appendChild(row);
+    // 1. 顏色輸入
+    this.querySelector('#color-hex-input').addEventListener('input', (ev) => {
+      const val = ev.target.value;
+      if (/^#[0-9A-F]{6}$/i.test(val) || /^#[0-9A-F]{3}$/i.test(val)) {
+        this.querySelector('#color-preview').style.background = val;
+        this._updateConfig('color', val);
+      }
     });
-  }
 
-  _entityChanged(index, newValue) {
-    const newEnts = [...this._config.entities];
-    newEnts[index] = { ...newEnts[index], entity: newValue };
-    this._updateConfig('entities', newEnts);
-  }
+    // 2. 3D 模式開關
+    this.querySelector('#mode-checkbox').addEventListener('change', (ev) => {
+      this._updateConfig('mode', ev.target.checked ? '3d' : '2d');
+    });
 
-  _addEntity() {
-    const newEnts = [...(this._config.entities || []), { entity: '', name: '', max: 100 }];
-    this._updateConfig('entities', newEnts);
-  }
+    // 3. 實體內容修改
+    this.querySelectorAll('.entity-input').forEach(el => {
+      el.addEventListener('change', (ev) => {
+        const idx = ev.target.dataset.index;
+        const newEnts = [...this._config.entities];
+        newEnts[idx] = { ...newEnts[idx], entity: ev.target.value };
+        this._updateConfig('entities', newEnts);
+      });
+    });
 
-  _removeEntity(index) {
-    const newEnts = this._config.entities.filter((_, i) => i !== index);
-    this._updateConfig('entities', newEnts);
+    // 4. 新增實體
+    this.querySelector('#add-ent').addEventListener('click', () => {
+      const newEnts = [...(this._config.entities || []), { entity: '', name: '', max: 100 }];
+      this._updateConfig('entities', newEnts);
+    });
+
+    // 5. 移除實體
+    this.querySelectorAll('.remove-ent').forEach(el => {
+      el.addEventListener('click', (ev) => {
+        const idx = ev.target.dataset.index;
+        const newEnts = this._config.entities.filter((_, i) => i != idx);
+        this._updateConfig('entities', newEnts);
+      });
+    });
   }
 
   _updateConfig(prop, value) {
@@ -101,65 +104,81 @@ class Prism3DCardEditor extends HTMLElement {
   }
 }
 
+// --- 2. 主卡片類別 (Main Card) ---
 class Prism3DCard extends HTMLElement {
-  static getConfigElement() { return document.createElement("prism-3d-card-editor"); }
-  static getStubConfig() { return { mode: "3d", color: "#E13460", radius: "65%", entities: [] }; }
+  static getConfigElement() {
+    return document.createElement("prism-3d-card-editor");
+  }
+
+  static getStubConfig() {
+    return {
+      mode: "3d",
+      color: "#E13460",
+      radius: "65%",
+      entities: [
+        { entity: "sun.sun", name: "範例數據", max: 100 }
+      ]
+    };
+  }
 
   set hass(hass) {
     this._hass = hass;
-    if (this.chart) this._updateData();
+    if (!this.chart) {
+      this._initChart();
+    } else {
+      this._updateData();
+    }
   }
 
   setConfig(config) {
     this.config = config;
   }
 
-  connectedCallback() {
-    this._initChart();
-  }
-
   _initChart() {
-    if (this.shadowRoot) return;
-    const root = this.attachShadow({ mode: 'open' });
+    if (this.shadowRoot && this.shadowRoot.querySelector('div')) return;
+    const root = this.shadowRoot || this.attachShadow({ mode: 'open' });
     const container = document.createElement('div');
-    container.style.cssText = "width: 100%; height: 350px; display: block;";
+    container.style.width = '100%';
+    container.style.height = this.config.height || '350px';
+    container.style.display = 'block';
     root.appendChild(container);
 
     setTimeout(() => {
+      if (container) {
         this.chart = echarts.init(container);
         this._updateData();
-        // 解決編輯器開啟時圖表變小的關鍵
-        const resizeObserver = new ResizeObserver(() => this.chart.resize());
-        resizeObserver.observe(container);
-    }, 100);
+      }
+    }, 0);
+    window.addEventListener('resize', () => this.chart && this.chart.resize());
   }
 
   _updateData() {
     if (!this._hass || !this.config.entities || !this.chart) return;
-    
+
     const dataValues = this.config.entities.map(ent => {
       const state = this._hass.states[ent.entity];
       return state ? parseFloat(state.state) || 0 : 0;
     });
 
     const indicators = this.config.entities.map(ent => ({
-      name: (ent.name || ent.entity.split('.')[1] || ent.entity).toUpperCase(),
+      name: (ent.name || ent.entity).toUpperCase(),
       max: ent.max || 100
     }));
 
     const is3D = this.config.mode !== '2d';
     const mainColor = this.config.color || '#E13460';
 
-    this.chart.setOption({
+    const option = {
       backgroundColor: 'transparent',
       animation: false,
       radar: {
         indicator: indicators,
         shape: 'polygon',
-        radius: '65%',
+        radius: this.config.radius || '65%',
         center: ['50%', '50%'],
-        axisName: { fontSize: 10, fontWeight: 'bold', color: '#cbd5e1' },
+        axisName: { fontSize: 12, fontWeight: 'bold', color: '#cbd5e1' },
         splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } },
+        splitArea: { show: false },
         axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.1)' } }
       },
       series: [{
@@ -180,7 +199,9 @@ class Prism3DCard extends HTMLElement {
           }
         }]
       }]
-    });
+    };
+
+    this.chart.setOption(option);
   }
 
   _hexToRgba(hex, opacity) {
@@ -192,8 +213,11 @@ class Prism3DCard extends HTMLElement {
     }
     return `rgba(${r}, ${g}, ${b}, ${opacity})`;
   }
+
+  getCardSize() { return 4; }
 }
 
+// --- 3. 註冊組件 ---
 customElements.define("prism-3d-card-editor", Prism3DCardEditor);
 customElements.define("prism-3d-card", Prism3DCard);
 
