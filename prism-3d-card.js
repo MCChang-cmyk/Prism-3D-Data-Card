@@ -1,18 +1,23 @@
 import "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js";
 
+// 取得 Home Assistant 內建的 LitElement 基底
 const LitElement = Object.getPrototypeOf(customElements.get("ha-panel-lovelace"));
 const html = LitElement.prototype.html;
 
-// ------------------------------ 編輯器部分 (Editor) ------------------------------
+// ------------------------------------------------------------------
+// 1. 編輯器類別 (Editor) - 使用 ha-form 實現原生質感
+// ------------------------------------------------------------------
 class Prism3DCardEditor extends LitElement {
   static get properties() {
     return { hass: {}, _config: { state: true } };
   }
 
   setConfig(config) {
+    // 確保 config 始終是一個物件
     this._config = { ...config };
   }
 
+  // 定義 GUI 的表單結構 (Schema)
   _schema() {
     return [
       { name: "color", selector: { text: {} } },
@@ -31,45 +36,53 @@ class Prism3DCardEditor extends LitElement {
       { 
         name: "entities", 
         selector: { 
-          entity: { 
-            multiple: true,
-            // 關鍵：只顯示感測器，並過濾掉非數字類型的實體
-            domain: "sensor",
-            integration: "sensor"
-          } 
+          entity: { multiple: true } 
         } 
       },
     ];
   }
 
+  _labelFor(name) {
+    const labels = {
+      color: "主色調 (Hex Code)",
+      mode: "顯示模式",
+      entities: "選擇數據實體 (可多選)",
+    };
+    return labels[name] || name;
+  }
+
   _valueChanged(ev) {
     if (!this._config || !this.hass) return;
-    const nextConfig = { ...ev.detail.value };
     
-    // 修正數據格式：確保 entities 儲存為物件陣列，供圖表渲染使用
-    if (nextConfig.entities && Array.isArray(nextConfig.entities)) {
-      nextConfig.entities = nextConfig.entities.map(ent => {
-        // 如果是字串，轉換為物件；如果是物件，保留
-        return typeof ent === 'string' ? { entity: ent, name: "", max: 100 } : ent;
-      });
-    }
+    // 取得選取的 ID 陣列 (例如 ["sensor.t1", "sensor.t2"])
+    const selectedIds = ev.detail.value.entities || [];
+    
+    // 將純 ID 陣列轉回圖表需要的物件陣列格式 [{entity: '...', name: '', max: 100}]
+    const newEntities = selectedIds.map(id => {
+      const existing = (this._config.entities || []).find(e => 
+        (typeof e === 'string' ? e : e.entity) === id
+      );
+      // 如果原本已有配置則保留，否則建立預設值
+      return typeof existing === 'object' ? existing : { entity: id, name: "", max: 100 };
+    });
 
+    // 發送設定變更事件
     this.dispatchEvent(new CustomEvent("config-changed", {
-      detail: { config: nextConfig },
+      detail: { config: { ...ev.detail.value, entities: newEntities } },
       bubbles: true,
       composed: true,
     }));
   }
 
-  // 為了讓 ha-form 顯示正確，傳給它的 data 必須是純 ID 字串陣列
   render() {
     if (!this.hass || !this._config) return html``;
 
-    // 格式轉換：把 [{entity: '...'}] 轉回 ['...'] 讓 GUI 顯示正常
+    // 關鍵：傳給 ha-form 顯示時，必須把物件陣列轉回純 ID 字串陣列
+    // 這樣 GUI 才能正確顯示已選取的標籤，不會出現 [object Object]
     const formData = {
       ...this._config,
       entities: (this._config.entities || []).map(ent => 
-        typeof ent === 'object' ? ent.entity : ent
+        typeof ent === 'string' ? ent : ent.entity
       )
     };
 
@@ -83,52 +96,11 @@ class Prism3DCardEditor extends LitElement {
       ></ha-form>
     `;
   }
-
-  _labelFor(name) {
-    const labels = {
-      color: "主色調 (Hex Code)",
-      mode: "顯示模式",
-      entities: "數據實體 (可複選)",
-    };
-    return labels[name] || name;
-  }
-
-  _valueChanged(ev) {
-    if (!this._config || !this.hass) return;
-    const nextConfig = ev.detail.value;
-    
-    // 如果 entities 只是字串陣列，我們將其轉換回內部格式，確保相容性
-    if (nextConfig.entities && typeof nextConfig.entities[0] === 'string') {
-      nextConfig.entities = nextConfig.entities.map(entId => ({
-        entity: entId,
-        name: "", // 讓使用者之後在 YAML 或後續功能中微調
-        max: 100
-      }));
-    }
-
-    this.dispatchEvent(new CustomEvent("config-changed", {
-      detail: { config: nextConfig },
-      bubbles: true,
-      composed: true,
-    }));
-  }
-
-  render() {
-    if (!this.hass || !this._config) return html``;
-
-    return html`
-      <ha-form
-        .hass=${this.hass}
-        .data=${this._config}
-        .schema=${this._schema()}
-        .computeLabel=${(s) => this._labelFor(s.name)}
-        @value-changed=${this._valueChanged}
-      ></ha-form>
-    `;
-  }
 }
 
-// ------------------------------ 卡片主體 (Card) ------------------------------
+// ------------------------------------------------------------------
+// 2. 主卡片類別 (Main Card) - 負責 3D 圖表渲染
+// ------------------------------------------------------------------
 class Prism3DCard extends HTMLElement {
   static getConfigElement() {
     return document.createElement("prism-3d-card-editor");
@@ -161,15 +133,19 @@ class Prism3DCard extends HTMLElement {
     setTimeout(() => {
       this.chart = echarts.init(container);
       this._updateData();
-      // 監聽容器大小，解決編輯時圖表變小的問題
-      new ResizeObserver(() => this.chart && this.chart.resize()).observe(container);
+      
+      // 使用 ResizeObserver 確保編輯器開關時圖表能自動校準大小
+      const ro = new ResizeObserver(() => {
+        if (this.chart) this.chart.resize();
+      });
+      ro.observe(container);
     }, 100);
   }
 
   _updateData() {
     if (!this._hass || !this.config.entities || !this.chart) return;
 
-    // 處理不同格式的 entities (相容字串與物件)
+    // 相容性處理：確保 entities 內部統一為物件格式
     const entities = this.config.entities.map(ent => 
       typeof ent === 'string' ? { entity: ent } : ent
     );
@@ -225,7 +201,7 @@ class Prism3DCard extends HTMLElement {
   }
 
   _hexToRgba(hex, opacity) {
-    const cleanHex = hex.replace('#', '');
+    const cleanHex = (hex || '#E13460').replace('#', '');
     let r = 0, g = 0, b = 0;
     if (cleanHex.length === 3) {
       r = parseInt(cleanHex[0] + cleanHex[0], 16);
@@ -242,6 +218,9 @@ class Prism3DCard extends HTMLElement {
   getCardSize() { return 4; }
 }
 
+// ------------------------------------------------------------------
+// 3. 註冊組件 (Registry)
+// ------------------------------------------------------------------
 customElements.define("prism-3d-card-editor", Prism3DCardEditor);
 customElements.define("prism-3d-card", Prism3DCard);
 
@@ -250,5 +229,5 @@ window.customCards.push({
   type: "prism-3d-card",
   name: "Prism 3D Data Card",
   preview: true,
-  description: "A futuristic radar chart with native HA entity picker."
+  description: "A professional 3D radar chart with native HA form editor."
 });
