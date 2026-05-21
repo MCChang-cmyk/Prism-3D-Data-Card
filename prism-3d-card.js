@@ -1,23 +1,21 @@
 import "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js";
 
-// 取得 Home Assistant 內建的 LitElement 基底
 const LitElement = Object.getPrototypeOf(customElements.get("ha-panel-lovelace"));
 const html = LitElement.prototype.html;
 
-// ------------------------------ 編輯器部分 ------------------------------
+// ------------------------------ 編輯器部分 (Editor) ------------------------------
 class Prism3DCardEditor extends LitElement {
   static get properties() {
-    return { hass: {}, _config: {} };
+    return { hass: {}, _config: { state: true } };
   }
 
   setConfig(config) {
-    this._config = config;
+    this._config = { ...config };
   }
 
-  // 定義 GUI 的表單結構 (Schema)
   _schema() {
     return [
-      { name: "color", selector: { text: {} } }, // 主色調輸入
+      { name: "color", selector: { text: {} } },
       {
         name: "mode",
         selector: {
@@ -30,39 +28,40 @@ class Prism3DCardEditor extends LitElement {
           },
         },
       },
-      {
-        name: "entities",
-        selector: {
-          template: {
-            // 這會生成一個可增減的實體清單，且每個實體包含 entity, name, max
-            schema: [
-              { name: "entity", selector: { entity: {} } },
-              { name: "name", selector: { text: {} } },
-              { name: "max", selector: { number: { mode: "box" } } },
-            ],
-          },
-        },
+      // 使用與範例最接近的實體清單選取器，確保不會出現報錯
+      { 
+        name: "entities", 
+        selector: { 
+          entity: { multiple: true } 
+        } 
       },
     ];
   }
 
-  // 定義標籤顯示文字
   _labelFor(name) {
     const labels = {
       color: "主色調 (Hex Code)",
       mode: "顯示模式",
-      entities: "數據實體配置",
-      entity: "實體 (Entity)",
-      name: "顯示名稱 (Name)",
-      max: "數值上限 (Max Value)",
+      entities: "數據實體 (可複選)",
     };
     return labels[name] || name;
   }
 
   _valueChanged(ev) {
-    const config = ev.detail.value;
+    if (!this._config || !this.hass) return;
+    const nextConfig = ev.detail.value;
+    
+    // 如果 entities 只是字串陣列，我們將其轉換回內部格式，確保相容性
+    if (nextConfig.entities && typeof nextConfig.entities[0] === 'string') {
+      nextConfig.entities = nextConfig.entities.map(entId => ({
+        entity: entId,
+        name: "", // 讓使用者之後在 YAML 或後續功能中微調
+        max: 100
+      }));
+    }
+
     this.dispatchEvent(new CustomEvent("config-changed", {
-      detail: { config },
+      detail: { config: nextConfig },
       bubbles: true,
       composed: true,
     }));
@@ -83,7 +82,7 @@ class Prism3DCardEditor extends LitElement {
   }
 }
 
-// ------------------------------ 卡片主體部分 ------------------------------
+// ------------------------------ 卡片主體 (Card) ------------------------------
 class Prism3DCard extends HTMLElement {
   static getConfigElement() {
     return document.createElement("prism-3d-card-editor");
@@ -116,23 +115,32 @@ class Prism3DCard extends HTMLElement {
     setTimeout(() => {
       this.chart = echarts.init(container);
       this._updateData();
-      // 使用 ResizeObserver 確保圖表在編輯時不會縮小
-      new ResizeObserver(() => this.chart.resize()).observe(container);
+      // 監聽容器大小，解決編輯時圖表變小的問題
+      new ResizeObserver(() => this.chart && this.chart.resize()).observe(container);
     }, 100);
   }
 
   _updateData() {
     if (!this._hass || !this.config.entities || !this.chart) return;
 
-    const dataValues = this.config.entities.map(ent => {
+    // 處理不同格式的 entities (相容字串與物件)
+    const entities = this.config.entities.map(ent => 
+      typeof ent === 'string' ? { entity: ent } : ent
+    );
+
+    const dataValues = entities.map(ent => {
       const state = this._hass.states[ent.entity];
       return state ? parseFloat(state.state) || 0 : 0;
     });
 
-    const indicators = this.config.entities.map(ent => ({
-      name: (ent.name || ent.entity.split('.')[1] || "數據").toUpperCase(),
-      max: ent.max || 100
-    }));
+    const indicators = entities.map(ent => {
+      const state = this._hass.states[ent.entity];
+      const friendlyName = state?.attributes?.friendly_name || ent.entity.split('.')[1];
+      return {
+        name: (ent.name || friendlyName || "數據").toUpperCase(),
+        max: ent.max || 100
+      };
+    });
 
     const is3D = this.config.mode !== '2d';
     const mainColor = this.config.color || '#E13460';
@@ -171,8 +179,8 @@ class Prism3DCard extends HTMLElement {
   }
 
   _hexToRgba(hex, opacity) {
-    let r = 0, g = 0, b = 0;
     const cleanHex = hex.replace('#', '');
+    let r = 0, g = 0, b = 0;
     if (cleanHex.length === 3) {
       r = parseInt(cleanHex[0] + cleanHex[0], 16);
       g = parseInt(cleanHex[1] + cleanHex[1], 16);
@@ -188,7 +196,6 @@ class Prism3DCard extends HTMLElement {
   getCardSize() { return 4; }
 }
 
-// 註冊
 customElements.define("prism-3d-card-editor", Prism3DCardEditor);
 customElements.define("prism-3d-card", Prism3DCard);
 
@@ -197,5 +204,5 @@ window.customCards.push({
   type: "prism-3d-card",
   name: "Prism 3D Data Card",
   preview: true,
-  description: "A futuristic 3D radar chart card using HA-Form editor."
+  description: "A futuristic radar chart with native HA entity picker."
 });
