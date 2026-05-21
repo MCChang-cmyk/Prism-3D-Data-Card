@@ -12,26 +12,35 @@ class Prism3DCardEditor extends HTMLElement {
   }
 
   _render() {
-    if (this._rendered) return;
-    // 建立編輯器 UI 結構
+    // 1. 防錯保護：如果 config 還沒準備好，就先顯示載入中或跳過
+    if (!this._config) return;
+
+    // 2. 避免重複渲染，但如果需要更新 UI 則允許執行
     this.innerHTML = `
-      <div id="editor-container" style="display: flex; flex-direction: column; gap: 16px; color: var(--primary-text-color);">
+      <div id="editor-container" style="display: flex; flex-direction: column; gap: 16px; color: var(--primary-text-color); padding: 10px;">
+        
         <div class="config-item">
-          <label style="display: block; margin-bottom: 8px;">主色調 (#E13460)</label>
-          <input type="color" id="color-picker" value="${this._config.color || '#E13460'}" style="width: 100%; height: 40px; border: none; cursor: pointer;">
+          <label style="display: block; margin-bottom: 8px; font-weight: bold;">主色調</label>
+          <input type="color" id="color-picker" 
+            value="${this._config.color || '#E13460'}" 
+            style="width: 100%; height: 40px; border: 2px solid var(--divider-color); border-radius: 4px; cursor: pointer; background: none;">
         </div>
         
         <div class="config-item">
-          <label style="display: block; margin-bottom: 8px;">顯示模式</label>
-          <select id="mode-select" style="width: 100%; padding: 8px; background: var(--card-background-color); color: var(--primary-text-color); border: 1px solid var(--divider-color);">
+          <label style="display: block; margin-bottom: 8px; font-weight: bold;">顯示模式</label>
+          <select id="mode-select" style="width: 100%; padding: 10px; border-radius: 4px; background: var(--card-background-color); color: var(--primary-text-color); border: 1px solid var(--divider-color);">
             <option value="3d" ${this._config.mode !== '2d' ? 'selected' : ''}>3D 立體</option>
             <option value="2d" ${this._config.mode === '2d' ? 'selected' : ''}>2D 平面</option>
           </select>
         </div>
 
-        <div class="config-item">
-          <label style="display: block; margin-bottom: 8px;">實體清單 (請在 YAML 中暫時修改，GUI 整合中...)</label>
-          <p style="font-size: 12px; opacity: 0.6;">目前 GUI 實體選擇器在某些 HA 版本需配合特殊 API，建議先用 YAML 修改 entities。</p>
+        <div class="config-item" style="border-top: 1px solid var(--divider-color); pt-10px; margin-top: 10px;">
+          <label style="display: block; margin-bottom: 8px; font-weight: bold;">數據配置</label>
+          <p style="font-size: 13px; opacity: 0.8; line-height: 1.4;">
+            請點擊下方的 <strong>「顯示代碼編輯器」</strong> 來新增或修改實體 (Entities)。<br>
+            範例格式：<br>
+            <code style="background: rgba(0,0,0,0.2); padding: 2px 4px;">- entity: sensor.your_sensor</code>
+          </p>
         </div>
       </div>
     `;
@@ -39,8 +48,6 @@ class Prism3DCardEditor extends HTMLElement {
     // 監聽事件
     this.querySelector('#color-picker').addEventListener('input', (ev) => this._updateConfig('color', ev.target.value));
     this.querySelector('#mode-select').addEventListener('change', (ev) => this._updateConfig('mode', ev.target.value));
-    
-    this._rendered = true;
   }
 
   _updateConfig(prop, value) {
