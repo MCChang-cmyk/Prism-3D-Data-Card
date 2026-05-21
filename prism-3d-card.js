@@ -1,8 +1,20 @@
 import "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js";
 
-// 取得 Home Assistant 內建的 LitElement 基底
-const LitElement = Object.getPrototypeOf(customElements.get("ha-panel-lovelace"));
-const html = LitElement.prototype.html;
+// --- 修正環境相容性 ---
+let LitElement = window.LitElement;
+if (!LitElement) {
+  const haPanel = customElements.get("ha-panel-lovelace");
+  if (haPanel) {
+    LitElement = Object.getPrototypeOf(haPanel);
+  } else {
+    // Live Server 環境下的後備方案
+    LitElement = class extends HTMLElement {
+      set hass(hass) { this._hass = hass; }
+      setConfig(config) { this._config = config; }
+    };
+  }
+}
+const html = LitElement.prototype.html || ((strings, ...values) => strings[0]);
 
 // ------------------------------------------------------------------
 // 1. 編輯器類別 (Editor) - 使用 ha-form 實現原生質感
