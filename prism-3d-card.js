@@ -28,14 +28,60 @@ class Prism3DCardEditor extends LitElement {
           },
         },
       },
-      // 使用與範例最接近的實體清單選取器，確保不會出現報錯
       { 
         name: "entities", 
         selector: { 
-          entity: { multiple: true } 
+          entity: { 
+            multiple: true,
+            // 關鍵：只顯示感測器，並過濾掉非數字類型的實體
+            domain: "sensor",
+            integration: "sensor"
+          } 
         } 
       },
     ];
+  }
+
+  _valueChanged(ev) {
+    if (!this._config || !this.hass) return;
+    const nextConfig = { ...ev.detail.value };
+    
+    // 修正數據格式：確保 entities 儲存為物件陣列，供圖表渲染使用
+    if (nextConfig.entities && Array.isArray(nextConfig.entities)) {
+      nextConfig.entities = nextConfig.entities.map(ent => {
+        // 如果是字串，轉換為物件；如果是物件，保留
+        return typeof ent === 'string' ? { entity: ent, name: "", max: 100 } : ent;
+      });
+    }
+
+    this.dispatchEvent(new CustomEvent("config-changed", {
+      detail: { config: nextConfig },
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
+  // 為了讓 ha-form 顯示正確，傳給它的 data 必須是純 ID 字串陣列
+  render() {
+    if (!this.hass || !this._config) return html``;
+
+    // 格式轉換：把 [{entity: '...'}] 轉回 ['...'] 讓 GUI 顯示正常
+    const formData = {
+      ...this._config,
+      entities: (this._config.entities || []).map(ent => 
+        typeof ent === 'object' ? ent.entity : ent
+      )
+    };
+
+    return html`
+      <ha-form
+        .hass=${this.hass}
+        .data=${formData}
+        .schema=${this._schema()}
+        .computeLabel=${(s) => this._labelFor(s.name)}
+        @value-changed=${this._valueChanged}
+      ></ha-form>
+    `;
   }
 
   _labelFor(name) {
