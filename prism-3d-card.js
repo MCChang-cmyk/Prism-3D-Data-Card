@@ -1,13 +1,12 @@
 import "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js";
 
-// --- 修正環境相容性 (關鍵：保留這段才能在 Live Server 執行) ---
+// --- 修正環境相容性 ---
 let LitElement = window.LitElement;
 if (!LitElement) {
   const haPanel = customElements.get("ha-panel-lovelace");
   if (haPanel) {
     LitElement = Object.getPrototypeOf(haPanel);
   } else {
-    // Live Server 環境下的後備方案
     LitElement = class extends HTMLElement {
       set hass(hass) { this._hass = hass; }
       setConfig(config) { this._config = config; }
@@ -15,7 +14,6 @@ if (!LitElement) {
   }
 }
 const html = LitElement.prototype.html || ((strings, ...values) => strings[0]);
-// ---------------------------------------------------------
 
 // 1. 編輯器類別 (Editor)
 class Prism3DCardEditor extends LitElement {
@@ -42,6 +40,10 @@ class Prism3DCardEditor extends LitElement {
           },
         },
       },
+      // --- 新增：尺寸控制 ---
+      { name: "card_height", selector: { number: { min: 200, max: 800, step: 10, unitOfMeasurement: "px", mode: "box" } } },
+      { name: "chart_radius", selector: { number: { min: 20, max: 95, step: 1, unitOfMeasurement: "%", mode: "slider" } } },
+      // --------------------
       { name: "line_width", selector: { number: { min: 1, max: 10, step: 1, mode: "slider" } } },
       { name: "area_opacity", selector: { number: { min: 0.1, max: 1, step: 0.05, mode: "slider" } } },
       { name: "text_size", selector: { number: { min: 8, max: 24, step: 1, mode: "slider" } } },
@@ -56,10 +58,12 @@ class Prism3DCardEditor extends LitElement {
     const labels = {
       color: "主色調 (Hex)",
       mode: "顯示模式",
+      card_height: "卡片高度 (px)",
+      chart_radius: "圖表縮放比例 (%)",
       line_width: "線條粗細",
       area_opacity: "填色透明度",
       text_size: "文字大小",
-      grid_color: "背景網格顏色 (Hex)",
+      grid_color: "網格顏色",
       grid_opacity_1: "網格透明度 A",
       grid_opacity_2: "網格透明度 B",
       entities: "選擇數據實體",
@@ -85,6 +89,8 @@ class Prism3DCardEditor extends LitElement {
   render() {
     if (!this.hass || !this._config) return html``;
     const formData = {
+      card_height: 350,
+      chart_radius: 65,
       line_width: 2,
       area_opacity: 0.4,
       text_size: 11,
@@ -110,26 +116,32 @@ class Prism3DCardEditor extends LitElement {
 // 2. 主卡片類別 (Card)
 class Prism3DCard extends HTMLElement {
   static getConfigElement() { return document.createElement("prism-3d-card-editor"); }
-  static getStubConfig() { return { mode: "3d", color: "#E13460", entities: [] }; }
+  static getStubConfig() { return { mode: "3d", color: "#E13460", card_height: 350, chart_radius: 65, entities: [] }; }
 
   set hass(hass) {
     this._hass = hass;
     if (!this.chart) { this._initChart(); } else { this._updateData(); }
   }
 
-  setConfig(config) { this.config = config; }
+  setConfig(config) { 
+    this.config = config;
+    // 如果配置變更，強制更新容器高度
+    if (this._container) {
+      this._container.style.height = `${this.config.card_height || 350}px`;
+    }
+  }
 
   _initChart() {
     if (this.shadowRoot) return;
     const root = this.attachShadow({ mode: 'open' });
-    const container = document.createElement('div');
-    container.style.cssText = "width: 100%; height: 100%; display: block;";
-    root.appendChild(container);
+    this._container = document.createElement('div');
+    this._container.style.cssText = `width: 100%; height: ${this.config.card_height || 350}px; display: block;`;
+    root.appendChild(this._container);
 
     setTimeout(() => {
-      this.chart = echarts.init(container);
+      this.chart = echarts.init(this._container);
       this._updateData();
-      new ResizeObserver(() => this.chart && this.chart.resize()).observe(container);
+      new ResizeObserver(() => this.chart && this.chart.resize()).observe(this._container);
     }, 100);
   }
 
@@ -142,6 +154,7 @@ class Prism3DCard extends HTMLElement {
     const areaOpacity = parseFloat(this.config.area_opacity) || 0.4;
     const textSize = this.config.text_size || 11;
     const gridColor = this.config.grid_color || '#ffffff';
+    const chartRadius = `${this.config.chart_radius || 65}%`; // 動態讀取縮放比例
     const gOp1 = this.config.grid_opacity_1 !== undefined ? this.config.grid_opacity_1 : 0.02;
     const gOp2 = this.config.grid_opacity_2 !== undefined ? this.config.grid_opacity_2 : 0.05;
 
@@ -163,7 +176,7 @@ class Prism3DCard extends HTMLElement {
       radar: {
         indicator: indicators,
         shape: 'polygon',
-        radius: '65%',
+        radius: chartRadius, // 應用動態比例
         center: ['50%', '50%'],
         axisName: { fontSize: textSize, fontWeight: '500', color: '#94a3b8' },
         splitLine: { lineStyle: { color: this._hexToRgba(gridColor, 0.1), width: 1 } },
@@ -219,11 +232,3 @@ class Prism3DCard extends HTMLElement {
 
 customElements.define("prism-3d-card-editor", Prism3DCardEditor);
 customElements.define("prism-3d-card", Prism3DCard);
-
-window.customCards = window.customCards || [];
-window.customCards.push({
-  type: "prism-3d-card",
-  name: "Prism 3D Data Card",
-  preview: true,
-  description: "A futuristic radar chart card with full GUI control."
-});
