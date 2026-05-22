@@ -176,6 +176,7 @@ class Prism3DCard extends HTMLElement {
   _updateData() {
     if (!this._hass || !this.config.entities || !this.chart) return;
 
+    // --- 讀取設定值 ---
     const mainColor = this.config.color || '#E13460';
     const is3D = this.config.mode === '3d';
     const lineWidth = this.config.line_width || 2;
@@ -202,13 +203,33 @@ class Prism3DCard extends HTMLElement {
     this.chart.setOption({
       backgroundColor: 'transparent',
       animation: false,
+      
+      // --- 新增：提示框配置 (Tooltip) ---
+      tooltip: {
+        show: true,
+        trigger: 'item',
+        backgroundColor: 'rgba(15, 23, 42, 0.9)', // 深色半透明背景
+        borderColor: mainColor,
+        borderWidth: 1,
+        textStyle: { color: '#fff', fontSize: 12 },
+        formatter: (params) => {
+          let html = `<div style="padding: 4px; font-weight: bold; border-bottom: 1px solid rgba(255,255,255,0.2); margin-bottom: 4px;">數據詳情</div>`;
+          indicators.forEach((ind, i) => {
+            html += `<div style="display: flex; justify-content: space-between; gap: 20px;">
+              <span style="opacity: 0.8;">${ind.name}:</span>
+              <span style="color: ${mainColor}; font-family: monospace;">${dataValues[i]}</span>
+            </div>`;
+          });
+          return html;
+        }
+      },
+
       radar: {
         indicator: indicators,
         shape: 'polygon',
         radius: chartRadius,
         center: ['50%', '50%'],
         axisName: { fontSize: textSize, fontWeight: '500', color: '#94a3b8' },
-        // 應用：網格線條透明度
         splitLine: { lineStyle: { color: this._hexToRgba(gridColor, gridLineOp), width: 1 } },
         axisLine: { lineStyle: { color: this._hexToRgba(gridColor, gridLineOp) } },
         splitArea: {
