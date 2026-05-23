@@ -111,7 +111,6 @@ class Prism3DCard extends HTMLElement {
     const gridColor = this.config.grid_color || '#ffffff';
     const gridLineOp = this.config.grid_line_opacity !== undefined ? this.config.grid_line_opacity : 0.1;
     const chartRadiusVal = parseFloat(this.config.chart_radius) || 65;
-    const opVar = parseFloat(this.config.opacity_variation) || 0.02; // 預設差異值為 0.02
     
     const rotationDeg = parseFloat(this.config.rotation) || 0;
     const rotationRad = (rotationDeg * Math.PI) / 180;
@@ -142,7 +141,8 @@ class Prism3DCard extends HTMLElement {
         const percent = val / (indicators[i].max || 100);
         const bx = cx + Math.cos(angle) * radius;
         const by = cy + (Math.sin(angle) * radius * tilt); 
-        return { bx, by, x: bx, y: by - (percent * 100) };
+        // 【核心修正】：將 val 傳回，供垂直虛線判斷
+        return { bx, by, x: bx, y: by - (percent * 100), val: val };
       };
 
       this.chart.setOption({
@@ -153,15 +153,15 @@ class Prism3DCard extends HTMLElement {
         series: [{
           type: 'custom',
           renderItem: (params, api) => {
-            const children = [];
-            const gridGroup = []; // 專門放網格
-            const faceGroup = []; // 專門放摺紙面
-            const textGroup = []; // 專門放文字
+            const gridGroup = [];
+            const faceGroup = [];
+            const lineGroup = [];
+            const textGroup = [];
             
             const pts = dataValues.map((v, i) => getP(v, i));
             const opVar = parseFloat(this.config.opacity_variation) || 0.02;
 
-            // --- A. 繪製 3D 地面網格 (確保包含旋轉與傾斜) ---
+            // --- A. 地面網格與軸線 ---
             const gridSteps = 5;
             for (let s = 1; s <= gridSteps; s++) {
               const stepR = radius * (s / gridSteps);
@@ -171,68 +171,105 @@ class Prism3DCard extends HTMLElement {
                 const gx = cx + Math.cos(angle) * stepR;
                 const gy = cy + Math.sin(angle) * stepR * tilt;
                 stepPoints.push([gx, gy]);
-                
-                // 放射軸線
                 if (s === gridSteps) {
-                  gridGroup.push({
-                    type: 'line',
-                    shape: { x1: cx, y1: cy, x2: gx, y2: gy },
-                    style: { stroke: gridColor, opacity: gridLineOp, lineWidth: 1 }
-                  });
+                  gridGroup.push({ type: 'line', shape: { x1: cx, y1: cy, x2: gx, y2: gy }, style: { stroke: gridColor, opacity: gridLineOp } });
                 }
               }
-              // 網格圈
-              gridGroup.push({
-                type: 'polygon',
-                shape: { points: stepPoints },
-                style: { fill: 'none', stroke: gridColor, opacity: gridLineOp, lineWidth: 1 }
-              });
+              gridGroup.push({ type: 'polygon', shape: { points: stepPoints }, style: { fill: 'none', stroke: gridColor, opacity: gridLineOp } });
             }
 
-            // --- B. 繪製摺紙主體 (帶有透明度差異值) ---
+            // --- B. 摺紙主體與垂直虛線 ---
             for (let i = 0; i < count; i++) {
               const p1 = pts[i];
               const p2 = pts[(i + 1) % count];
-              const pMid = { x: (p1.bx + p2.bx) / 2, y: (p1.by + p2.by) / 2 };
+              
+              const pMid = { 
+                x: (p1.bx + p2.bx) / 2, 
+                y: (p1.by + p2.by) / 2 
+              };
 
+              // 1. 垂直定位虛線 - 現在 p1.val 抓得到了
+              if (p1.val > 0) {
+                lineGroup.push({
+                  type: 'line',
+                  z: 5,
+                  shape: { x1: p1.bx, y1: p1.by, x2: p1.x, y2: p1.y },
+                  style: { 
+                    stroke: mainColor, 
+                    fill: 'none', 
+                    lineDash: [2, 3], 
+                    lineWidth: 1, 
+                    opacity: 0.5 
+                  }
+                });
+              }
+
+              // 2. 摺紙色塊 (加入純平優化)
               const opLeft = Math.min(1, Math.max(0, areaOpacity + opVar));
               const opRight = Math.min(1, Math.max(0, areaOpacity - opVar));
 
-              // 左側面
-              faceGroup.push({ 
-                type: 'polygon', 
-                shape: { points: [[cx, cy], [p1.x, p1.y], [pMid.x, pMid.y]] }, 
-                style: { fill: this._hexToRgba(mainColor, opLeft), lineWidth: 0 } 
-              });
-              // 右側面
-              faceGroup.push({ 
-                type: 'polygon', 
-                shape: { points: [[cx, cy], [pMid.x, pMid.y], [p2.x, p2.y]] }, 
-                style: { fill: this._hexToRgba(mainColor, opRight), lineWidth: 0 } 
+              if (opVar < 0.001) {
+                // 如果差異值接近 0，直接畫一個大三角形 (p1 -> 中心 -> p2)
+                // 這樣就不會有中間那一條重疊產生的深色線
+                faceGroup.push({ 
+                  type: 'polygon', 
+                  shape: { points: [[cx, cy], [p1.x, p1.y], [p2.x, p2.y]] }, 
+                  style: { fill: this._hexToRgba(mainColor, areaOpacity), lineWidth: 0 } 
+                });
+              } else {
+                // 原有的摺紙邏輯 (左右分開畫，產生明暗差)
+                faceGroup.push({ 
+                  type: 'polygon', 
+                  shape: { points: [[cx, cy], [p1.x, p1.y], [pMid.x, pMid.y]] }, 
+                  style: { fill: this._hexToRgba(mainColor, opLeft), lineWidth: 0 } 
+                });
+                faceGroup.push({ 
+                  type: 'polygon', 
+                  shape: { points: [[cx, cy], [pMid.x, pMid.y], [p2.x, p2.y]] }, 
+                  style: { fill: this._hexToRgba(mainColor, opRight), lineWidth: 0 } 
+                });
+              }
+
+              // 3. 純稜線
+              lineGroup.push({
+                type: 'polyline',
+                z: 6,
+                shape: { points: [[p1.x, p1.y], [pMid.x, pMid.y], [p2.x, p2.y]] },
+                style: {
+                  stroke: mainColor,
+                  fill: 'none',
+                  lineWidth: lineWidth,
+                  opacity: 0.9,
+                  join: 'round',
+                  cap: 'round'
+                }
               });
 
-              // 文字標籤
+              // 4. 文字標籤
               const angle = (Math.PI * 2 / count) * i - Math.PI / 2 + rotationRad;
               textGroup.push({
-                type: 'text', z: 10,
+                type: 'text',
+                z: 10,
                 style: {
                   text: indicators[i].name,
-                  x: cx + Math.cos(angle) * (radius + 45),
-                  y: cy + Math.sin(angle) * (radius * tilt + 25),
-                  fill: '#94a3b8', font: `${textSize}px sans-serif`,
-                  textAlign: 'center', textVerticalAlign: 'middle'
+                  // 直接使用數據點座標 (p1.x, p1.y)
+                  // 並加上微小的偏移避免文字壓在線上
+                  x: p1.x, 
+                  y: p1.y - (textSize + 5), // 向上偏移一個字體高度
+                  fill: '#94a3b8', 
+                  font: `${textSize}px sans-serif`,
+                  textAlign: 'center', 
+                  textVerticalAlign: 'bottom', // 改為底部對齊，讓文字浮在點上方
+                  // 增加一點文字陰影，確保在不同透明度色塊前都清晰
+                  stroke: '#000',
+                  lineWidth: 2
                 }
               });
             }
 
-            // --- C. 合併所有圖層：確保網格在最下層 ---
             return {
               type: 'group',
-              children: [
-                ...gridGroup, // 最底層
-                ...faceGroup, // 中間層
-                ...textGroup  // 最頂層
-              ]
+              children: [...gridGroup, ...faceGroup, ...lineGroup, ...textGroup]
             };
           },
           data: [0]
