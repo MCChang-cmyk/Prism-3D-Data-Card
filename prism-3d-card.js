@@ -51,6 +51,18 @@ class Prism3DCardEditor extends LitElement {
         schema: [
           { name: "grid_color", selector: { text: {} } },
           { name: "grid_line_opacity", selector: { number: { min: 0, max: 1, step: 0.05, mode: "slider" } } },
+          { name: "chart_radius", selector: { number: { min: 10, max: 100, step: 1, unitOfMeasurement: "%", mode: "slider" } } },
+          // --- 新增：斑馬紋透明度控制 ---
+          { 
+            name: "grid_opacity_1", 
+            label: "網格層 1 透明度 (奇數層)",
+            selector: { number: { min: 0, max: 0.2, step: 0.005, mode: "slider" } } 
+          },
+          { 
+            name: "grid_opacity_2", 
+            label: "網格層 2 透明度 (偶數層)",
+            selector: { number: { min: 0, max: 0.2, step: 0.005, mode: "slider" } } 
+          },
         ]
       }
     ];
@@ -65,7 +77,7 @@ class Prism3DCardEditor extends LitElement {
   }
 
   render() {
-    const formData = { card_height: 350, line_width: 2, area_opacity: 0.4, rotation: 0, opacity_variation: 0.02, tilt: 0.4, ...this._config };
+    const formData = { card_height: 350, line_width: 2, area_opacity: 0.4, rotation: 0, opacity_variation: 0.02, tilt: 0.4, chart_radius: 65, ...this._config };
     return html`<ha-form .hass=${this.hass} .data=${formData} .schema=${this._schema()} @value-changed=${this._valueChanged}></ha-form>`;
   }
 }
@@ -102,7 +114,6 @@ class Prism3DCard extends HTMLElement {
   _updateData() {
     if (!this._hass || !this.config.entities || !this.chart) return;
 
-    // --- 1. 讀取設定 ---
     const mainColor = this.config.color || '#E13460';
     const is3D = this.config.mode === '3d';
     const lineWidth = this.config.line_width || 2;
@@ -116,7 +127,6 @@ class Prism3DCard extends HTMLElement {
     const rotationRad = (rotationDeg * Math.PI) / 180;
     const tilt = parseFloat(this.config.tilt) || 0.4;
 
-    // --- 2. 數據預處理 ---
     const entities = this.config.entities.map(ent => typeof ent === 'string' ? { entity: ent } : ent);
     const dataValues = entities.map(ent => {
       const state = this._hass.states[ent.entity];
@@ -133,20 +143,43 @@ class Prism3DCard extends HTMLElement {
     if (is3D) {
       const count = dataValues.length;
       const w = this.chart.getWidth(), h = this.chart.getHeight();
-      const cx = w / 2, cy = h / 2 + 40;
-      const radius = (chartRadiusVal / 100) * Math.min(w, h) * 0.5;
+      const cx = w / 2;
+      const cy = h / 2 + 20;
+
+      // 調整 3D 半徑係數，讓 HA 顯示較大
+      const radius = (chartRadiusVal / 100) * Math.min(w, h) * 0.6;
 
       const getP = (val, i, offset = 0) => {
         const angle = (Math.PI * 2 / count) * i - Math.PI / 2 + offset + rotationRad;
         const percent = val / (indicators[i].max || 100);
         const bx = cx + Math.cos(angle) * radius;
         const by = cy + (Math.sin(angle) * radius * tilt); 
-        // 【核心修正】：將 val 傳回，供垂直虛線判斷
-        return { bx, by, x: bx, y: by - (percent * 100), val: val };
+        // 高度隨半徑縮放，避免比例失調
+        return { bx, by, x: bx, y: by - (percent * (radius * 0.8)), val: val };
       };
 
       this.chart.setOption({
         backgroundColor: 'transparent',
+        tooltip: {
+          show: true,
+          trigger: 'item',
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          borderColor: 'rgba(255, 255, 255, 0.1)',
+          textStyle: { color: '#fff' },
+          formatter: (params) => {
+            // 因為 custom 系列只有一組數據 [0]，我們手動構建列表
+            let html = `<div style="padding: 5px;">`;
+            indicators.forEach((ind, idx) => {
+              html += `
+                <div style="display:flex; justify-content:space-between; gap:20px; margin-bottom:3px;">
+                  <span style="color:#94a3b8">${ind.name}</span>
+                  <b style="color:${mainColor}">${dataValues[idx]}</b>
+                </div>`;
+            });
+            html += `</div>`;
+            return html;
+          }
+        },
         xAxis: { show: false, min: 0, max: w },
         yAxis: { show: false, min: 0, max: h },
         radar: { show: false },
@@ -161,9 +194,11 @@ class Prism3DCard extends HTMLElement {
             const pts = dataValues.map((v, i) => getP(v, i));
             const opVar = parseFloat(this.config.opacity_variation) || 0.02;
 
-            // --- A. 地面網格與軸線 ---
             const gridSteps = 5;
-            for (let s = 1; s <= gridSteps; s++) {
+            const gOp1 = this.config.grid_opacity_1 !== undefined ? this.config.grid_opacity_1 : 0.02;
+            const gOp2 = this.config.grid_opacity_2 !== undefined ? this.config.grid_opacity_2 : 0.05;
+
+            for (let s = gridSteps; s >= 1; s--) { // 從外往內畫，確保色塊層級正確
               const stepR = radius * (s / gridSteps);
               const stepPoints = [];
               for (let i = 0; i < count; i++) {
@@ -171,53 +206,54 @@ class Prism3DCard extends HTMLElement {
                 const gx = cx + Math.cos(angle) * stepR;
                 const gy = cy + Math.sin(angle) * stepR * tilt;
                 stepPoints.push([gx, gy]);
+                
+                // 放射軸線：僅在最外圈時繪製一次
                 if (s === gridSteps) {
-                  gridGroup.push({ type: 'line', shape: { x1: cx, y1: cy, x2: gx, y2: gy }, style: { stroke: gridColor, opacity: gridLineOp } });
+                  gridGroup.push({
+                    type: 'line',
+                    shape: { x1: cx, y1: cy, x2: gx, y2: gy },
+                    style: { stroke: gridColor, opacity: gridLineOp, lineWidth: 1 }
+                  });
                 }
               }
-              gridGroup.push({ type: 'polygon', shape: { points: stepPoints }, style: { fill: 'none', stroke: gridColor, opacity: gridLineOp } });
+
+              // 繪製斑馬紋色票 (階梯填色)
+              gridGroup.push({
+                type: 'polygon',
+                shape: { points: stepPoints },
+                style: { 
+                  // 根據圈數 s 奇偶切換透明度
+                  fill: this._hexToRgba(gridColor, s % 2 === 0 ? gOp2 : gOp1),
+                  stroke: gridColor, 
+                  opacity: gridLineOp, 
+                  lineWidth: 1 
+                }
+              });
             }
 
-            // --- B. 摺紙主體與垂直虛線 ---
             for (let i = 0; i < count; i++) {
               const p1 = pts[i];
               const p2 = pts[(i + 1) % count];
-              
-              const pMid = { 
-                x: (p1.bx + p2.bx) / 2, 
-                y: (p1.by + p2.by) / 2 
-              };
+              const pMid = { x: (p1.bx + p2.bx) / 2, y: (p1.by + p2.by) / 2 };
 
-              // 1. 垂直定位虛線 - 現在 p1.val 抓得到了
               if (p1.val > 0) {
                 lineGroup.push({
-                  type: 'line',
-                  z: 5,
+                  type: 'line', z: 5,
                   shape: { x1: p1.bx, y1: p1.by, x2: p1.x, y2: p1.y },
-                  style: { 
-                    stroke: mainColor, 
-                    fill: 'none', 
-                    lineDash: [2, 3], 
-                    lineWidth: 1, 
-                    opacity: 0.5 
-                  }
+                  style: { stroke: mainColor, fill: 'none', lineDash: [2, 3], lineWidth: 1, opacity: 0.5 }
                 });
               }
 
-              // 2. 摺紙色塊 (加入純平優化)
               const opLeft = Math.min(1, Math.max(0, areaOpacity + opVar));
               const opRight = Math.min(1, Math.max(0, areaOpacity - opVar));
 
               if (opVar < 0.001) {
-                // 如果差異值接近 0，直接畫一個大三角形 (p1 -> 中心 -> p2)
-                // 這樣就不會有中間那一條重疊產生的深色線
                 faceGroup.push({ 
                   type: 'polygon', 
                   shape: { points: [[cx, cy], [p1.x, p1.y], [p2.x, p2.y]] }, 
                   style: { fill: this._hexToRgba(mainColor, areaOpacity), lineWidth: 0 } 
                 });
               } else {
-                // 原有的摺紙邏輯 (左右分開畫，產生明暗差)
                 faceGroup.push({ 
                   type: 'polygon', 
                   shape: { points: [[cx, cy], [p1.x, p1.y], [pMid.x, pMid.y]] }, 
@@ -230,111 +266,58 @@ class Prism3DCard extends HTMLElement {
                 });
               }
 
-              // 3. 純稜線
               lineGroup.push({
-                type: 'polyline',
-                z: 6,
+                type: 'polyline', z: 6,
                 shape: { points: [[p1.x, p1.y], [pMid.x, pMid.y], [p2.x, p2.y]] },
-                style: {
-                  stroke: mainColor,
-                  fill: 'none',
-                  lineWidth: lineWidth,
-                  opacity: 0.9,
-                  join: 'round',
-                  cap: 'round'
-                }
+                style: { stroke: mainColor, fill: 'none', lineWidth: lineWidth, opacity: 0.9, join: 'round', cap: 'round' }
               });
 
-              // 4. 文字標籤
               const angle = (Math.PI * 2 / count) * i - Math.PI / 2 + rotationRad;
               textGroup.push({
-                type: 'text',
-                z: 10,
+                type: 'text', z: 10,
                 style: {
                   text: indicators[i].name,
-                  // 直接使用數據點座標 (p1.x, p1.y)
-                  // 並加上微小的偏移避免文字壓在線上
                   x: p1.x, 
-                  y: p1.y - (textSize + 5), // 向上偏移一個字體高度
-                  fill: '#94a3b8', 
-                  font: `${textSize}px sans-serif`,
-                  textAlign: 'center', 
-                  textVerticalAlign: 'bottom', // 改為底部對齊，讓文字浮在點上方
-                  // 增加一點文字陰影，確保在不同透明度色塊前都清晰
-                  stroke: '#000',
-                  lineWidth: 2
+                  y: p1.y - (textSize + 5), 
+                  fill: '#94a3b8', font: `${textSize}px sans-serif`,
+                  textAlign: 'center', textVerticalAlign: 'bottom',
+                  stroke: '#000', lineWidth: 2
                 }
               });
             }
 
-            return {
-              type: 'group',
-              children: [...gridGroup, ...faceGroup, ...lineGroup, ...textGroup]
-            };
+            return { type: 'group', children: [...gridGroup, ...faceGroup, ...lineGroup, ...textGroup] };
           },
           data: [0]
         }]
       }, true);
     } else {
-      // --- 【2D 模式：視覺精修回歸】 ---
-      const indicators = entities.map(ent => ({
-        name: (ent.name || this._hass.states[ent.entity]?.attributes?.friendly_name || ent.entity.split('.')[1]).toUpperCase(),
-        max: ent.max || 100
-      }));
-
+      // --- 2D 模式 ---
       this.chart.setOption({
         backgroundColor: 'transparent',
-        xAxis: { show: false }, 
-        yAxis: { show: false },
+        tooltip: {
+          show: true,
+          trigger: 'item',
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          borderColor: 'rgba(0, 0, 0, 0.7)',
+          textStyle: { color: '#fff' }
+        },
+        xAxis: { show: false }, yAxis: { show: false },
         radar: {
           indicator: indicators,
           startAngle: 90 + rotationDeg,
-          shape: 'polygon',
-          radius: `${chartRadiusVal}%`,
+          shape: 'polygon', radius: `${chartRadiusVal}%`,
           center: ['50%', '50%'],
-          axisName: { 
-            fontSize: textSize, 
-            fontWeight: '500', 
-            color: '#94a3b8',
-            fontFamily: 'Roboto, sans-serif'
-          },
-          // 恢復階梯背景感
-          splitLine: { 
-            lineStyle: { color: this._hexToRgba(gridColor, gridLineOp), width: 1 } 
-          },
-          axisLine: { 
-            lineStyle: { color: this._hexToRgba(gridColor, gridLineOp) } 
-          },
-          splitArea: {
-            show: true,
-            areaStyle: {
-              color: [
-                this._hexToRgba(gridColor, 0.02),
-                this._hexToRgba(gridColor, 0.05),
-                this._hexToRgba(gridColor, 0.02),
-                this._hexToRgba(gridColor, 0.05),
-                this._hexToRgba(gridColor, 0.02)
-              ].reverse()
-            }
-          }
+          axisName: { fontSize: textSize, fontWeight: '500', color: '#94a3b8' },
+          splitLine: { lineStyle: { color: this._hexToRgba(gridColor, gridLineOp) } },
+          splitArea: { show: true, areaStyle: { color: [this._hexToRgba(gridColor, 0.02), this._hexToRgba(gridColor, 0.05)].reverse() } }
         },
         series: [{
           type: 'radar',
           data: [{
-            value: dataValues,
-            symbol: 'none', 
-            // 精修線條：加入圓角交匯與微弱光暈
-            lineStyle: { 
-              color: mainColor, 
-              width: lineWidth,
-              join: 'round',    // 讓拐角圓滑
-              cap: 'round',
-              shadowBlur: 10,   // 增加發光感
-              shadowColor: this._hexToRgba(mainColor, 0.3)
-            },
-            areaStyle: { 
-              color: this._hexToRgba(mainColor, areaOpacity) 
-            }
+            value: dataValues, symbol: 'none',
+            lineStyle: { color: mainColor, width: lineWidth, join: 'round', shadowBlur: 10, shadowColor: this._hexToRgba(mainColor, 0.3) },
+            areaStyle: { color: this._hexToRgba(mainColor, areaOpacity) }
           }]
         }]
       }, true);
