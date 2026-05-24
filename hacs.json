@@ -3,5 +3,5 @@
   "description": "A futuristic 3D prism data visualization card for Home Assistant.",
   "render_readme": true,
   "type": "layout",
-  "filename": "prism-3d-card.js"
+  "filename": "dist/prism-3d-card.js"
 }
