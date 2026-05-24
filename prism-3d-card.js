@@ -1,6 +1,6 @@
 import "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js";
 
-console.info("%c PRISM-3D-CARD %c v1.1.0 ", "color: white; background: #E13460; font-weight: 700;", "color: #E13460; background: white; font-weight: 700;");
+console.info("%c PRISM-3D-CARD %c v1.3.0 ", "color: white; background: #E13460; font-weight: 700;", "color: #E13460; background: white; font-weight: 700;");
 
 // --- 環境相容性修正 ---
 let LitElement = window.LitElement;
@@ -26,16 +26,19 @@ class Prism3DCardEditor extends LitElement {
     const labels = {
       color: "圖表主色",
       mode: "顯示模式",
+      chart_radius: "圖表縮放比例",
       entities: "選擇實體 (Entities)",
       rotation: "旋轉角度",
       tilt: "傾斜視角 (俯視度)",
       line_width: "稜線寬度",
       area_opacity: "區域總透明度",
       text_size: "文字字體大小",
+      text_color: "文字顯示顏色",
+      text_stroke_width: "文字外框粗細",
+      text_stroke_color: "文字外框顏色",
       opacity_variation: "3D 明暗差異值",
       grid_color: "網格顏色",
       grid_line_opacity: "網格線透明度",
-      chart_radius: "圖表縮放比例",
       grid_opacity_1: "背景斑馬紋 - 淺色層",
       grid_opacity_2: "背景斑馬紋 - 深色層"
     };
@@ -49,6 +52,7 @@ class Prism3DCardEditor extends LitElement {
         name: "mode", 
         selector: { select: { mode: "dropdown", options: [{ label: "3D 立體", value: "3d" }, { label: "2D 平面", value: "2d" }] } } 
       },
+      { name: "chart_radius", selector: { number: { min: 10, max: 100, step: 1, unitOfMeasurement: "%", mode: "slider" } } },
       { name: "entities", selector: { entity: { multiple: true } } },
       {
         type: "expandable", title: "視角與角度",
@@ -58,11 +62,14 @@ class Prism3DCardEditor extends LitElement {
         ],
       },
       {
-        type: "expandable", title: "視覺精修",
+        type: "expandable", title: "視覺效果",
         schema: [
           { name: "line_width", selector: { number: { min: 1, max: 10, step: 1, mode: "slider" } } },
           { name: "area_opacity", selector: { number: { min: 0.1, max: 1, step: 0.05, mode: "slider" } } },
           { name: "text_size", selector: { number: { min: 8, max: 24, step: 1, mode: "slider" } } },
+          { name: "text_color", selector: { text: {} } },
+          { name: "text_stroke_width", selector: { number: { min: 0, max: 10, step: 0.5, mode: "slider" } } },
+          { name: "text_stroke_color", selector: { text: {} } },
           { name: "opacity_variation", selector: { number: { min: 0, max: 0.2, step: 0.01, mode: "slider" } } },
         ]
       },
@@ -71,7 +78,6 @@ class Prism3DCardEditor extends LitElement {
         schema: [
           { name: "grid_color", selector: { text: {} } },
           { name: "grid_line_opacity", selector: { number: { min: 0, max: 1, step: 0.05, mode: "slider" } } },
-          { name: "chart_radius", selector: { number: { min: 10, max: 100, step: 1, unitOfMeasurement: "%", mode: "slider" } } },
           { name: "grid_opacity_1", selector: { number: { min: 0, max: 0.2, step: 0.005, mode: "slider" } } },
           { name: "grid_opacity_2", selector: { number: { min: 0, max: 0.2, step: 0.005, mode: "slider" } } },
         ]
@@ -103,6 +109,7 @@ class Prism3DCardEditor extends LitElement {
     const formData = { 
       card_height: 350, line_width: 2, area_opacity: 0.4, rotation: 0, 
       opacity_variation: 0.02, tilt: 0.4, chart_radius: 65,
+      text_size: 11, text_color: "#94a3b8", text_stroke_width: 2, text_stroke_color: "#000000",
       grid_opacity_1: 0.02, grid_opacity_2: 0.05,
       ...displayConfig 
     };
@@ -156,6 +163,9 @@ class Prism3DCard extends HTMLElement {
     const lineWidth = this.config.line_width || 2;
     const areaOpacity = parseFloat(this.config.area_opacity) || 0.4;
     const textSize = this.config.text_size || 11;
+    const textColor = this.config.text_color || '#94a3b8';
+    const textStrokeWidth = this.config.text_stroke_width !== undefined ? this.config.text_stroke_width : 2;
+    const textStrokeColor = this.config.text_stroke_color || '#000000';
     const gridColor = this.config.grid_color || '#ffffff';
     const gridLineOp = this.config.grid_line_opacity !== undefined ? this.config.grid_line_opacity : 0.1;
     const chartRadiusVal = parseFloat(this.config.chart_radius) || 65;
@@ -164,7 +174,6 @@ class Prism3DCard extends HTMLElement {
     const rotationRad = (rotationDeg * Math.PI) / 180;
     const tilt = parseFloat(this.config.tilt) || 0.4;
 
-    // --- 斑馬紋參數初始化 ---
     const gOp1 = this.config.grid_opacity_1 !== undefined ? parseFloat(this.config.grid_opacity_1) : 0.02;
     const gOp2 = this.config.grid_opacity_2 !== undefined ? parseFloat(this.config.grid_opacity_2) : 0.05;
 
@@ -228,7 +237,6 @@ class Prism3DCard extends HTMLElement {
             const pts = dataValues.map((v, i) => getP(v, i));
             const opVar = parseFloat(this.config.opacity_variation) || 0.02;
 
-            // --- 3D 斑馬紋邏輯修正 ---
             const gridSteps = 5;
             for (let s = gridSteps; s >= 1; s--) {
               const stepR = radius * (s / gridSteps);
@@ -242,15 +250,12 @@ class Prism3DCard extends HTMLElement {
                   gridGroup.push({ type: 'line', shape: { x1: cx, y1: cy, x2: gx, y2: gy }, style: { stroke: gridColor, opacity: gridLineOp, lineWidth: 1 } });
                 }
               }
-              // 繪製背景面 (s % 2 切換透明度)
               gridGroup.push({
                 type: 'polygon',
                 shape: { points: stepPoints },
                 style: { 
                   fill: this._hexToRgba(gridColor, s % 2 === 0 ? gOp2 : gOp1),
-                  stroke: gridColor, 
-                  opacity: gridLineOp, 
-                  lineWidth: 1 
+                  stroke: gridColor, opacity: gridLineOp, lineWidth: 1 
                 }
               });
             }
@@ -285,8 +290,9 @@ class Prism3DCard extends HTMLElement {
                 type: 'text', z: 10,
                 style: {
                   text: indicators[i].name, x: p1.x, y: p1.y - (textSize + 5), 
-                  fill: '#94a3b8', font: `${textSize}px sans-serif`,
-                  textAlign: 'center', textVerticalAlign: 'bottom', stroke: '#000', lineWidth: 2
+                  fill: textColor, font: `${textSize}px sans-serif`,
+                  textAlign: 'center', textVerticalAlign: 'bottom', 
+                  stroke: textStrokeColor, lineWidth: textStrokeWidth
                 }
               });
             }
@@ -296,7 +302,6 @@ class Prism3DCard extends HTMLElement {
         }]
       }, true);
     } else {
-      // --- 2D 模式：斑馬紋同步修正 ---
       this.chart.setOption({
         backgroundColor: 'transparent',
         tooltip: {
@@ -305,12 +310,17 @@ class Prism3DCard extends HTMLElement {
         xAxis: { show: false }, yAxis: { show: false },
         radar: {
           indicator: indicators, startAngle: 90 + rotationDeg, shape: 'polygon', radius: `${chartRadiusVal}%`, center: ['50%', '50%'],
-          axisName: { fontSize: textSize, fontWeight: '500', color: '#94a3b8' },
+          axisName: { 
+            fontSize: textSize, 
+            fontWeight: '500', 
+            color: textColor,
+            stroke: textStrokeColor,
+            lineWidth: textStrokeWidth 
+          },
           splitLine: { lineStyle: { color: this._hexToRgba(gridColor, gridLineOp) } },
           splitArea: { 
             show: true, 
             areaStyle: { 
-              // 使用相同的 gOp1 與 gOp2 參數
               color: [this._hexToRgba(gridColor, gOp2), this._hexToRgba(gridColor, gOp1)].reverse() 
             } 
           }
