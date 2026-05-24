@@ -332,7 +332,7 @@ class Prism3DCard extends HTMLElement {
       option = {
         backgroundColor: 'transparent',
         tooltip: {
-          show: true, trigger: 'item', backgroundColor: 'rgba(0, 0, 0, 0.8)', borderColor: mainColor, textStyle: { color: '#fff' }
+          show: true, trigger: 'item', backgroundColor: 'rgba(0, 0, 0, 0.8)', borderColor: 'rgba(255, 255, 255, 0.1)', textStyle: { color: '#fff' }
         },
         xAxis: { show: false }, yAxis: { show: false },
         radar: {
