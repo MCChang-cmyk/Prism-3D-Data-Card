@@ -1,6 +1,6 @@
 import "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js";
 
-const CARD_VERSION = "v1.4.0"; 
+const CARD_VERSION = "v1.5.2"; 
 
 console.info(
   `%c PRISM-3D-CARD %c ${CARD_VERSION} %c (dist) `,
@@ -198,7 +198,6 @@ class Prism3DCard extends HTMLElement {
       };
     });
 
-    // 共享的座標計算函數
     const getP = (val, i, cx, cy, radius, rotationRad, tilt, indicators) => {
         const count = indicators.length;
         const angle = (Math.PI * 2 / count) * i - Math.PI / 2 + rotationRad;
@@ -239,10 +238,6 @@ class Prism3DCard extends HTMLElement {
             renderItem: (params, api) => {
               const i = params.dataIndex;
               const pts = dataValues.map((v, idx) => getP(v, idx, cx, cy, radius, rotationRad, tilt, indicators));
-              const opVar = parseFloat(this.config.opacity_variation) || 0.02;
-              const isHovered = (i === this._hoverIndex);
-              const highlightBonus = isHovered ? 0.3 : 0;
-
               const gridGroup = [], faceGroup = [], lineGroup = [];
 
               if (i === 0) {
@@ -264,33 +259,35 @@ class Prism3DCard extends HTMLElement {
               }
 
               const pCurr = pts[i], pPrev = pts[(i - 1 + count) % count], pNext = pts[(i + 1) % count];
-              const pMidLeft = { x: (pPrev.bx + pCurr.bx) / 2, y: (pPrev.by + pCurr.by) / 2 };
-              const pMidRight = { x: (pCurr.bx + pNext.bx) / 2, y: (pCurr.by + pNext.by) / 2 };
+              const mLeft = { x: (pPrev.bx + pCurr.bx) / 2, y: (pPrev.by + pCurr.by) / 2 };
+              const mRight = { x: (pCurr.bx + pNext.bx) / 2, y: (pCurr.by + pNext.by) / 2 };
+              
+              const isHovered = (i === this._hoverIndex);
+              const highlightBonus = isHovered ? 0.3 : 0;
+              const opVar = parseFloat(this.config.opacity_variation) || 0.02;
 
               const opHigh = Math.min(1, Math.max(0, areaOpacity + opVar + highlightBonus));
               const opLow = Math.min(1, Math.max(0, areaOpacity - opVar + highlightBonus));
 
               faceGroup.push({
                 type: 'polygon', z: 2,
-                shape: { points: [[cx, cy], [pMidLeft.x, pMidLeft.y], [pCurr.x, pCurr.y]] },
+                shape: { points: [[cx, cy], [mLeft.x, mLeft.y], [pCurr.x, pCurr.y]] },
                 style: { fill: this._hexToRgba(mainColor, opHigh), lineWidth: 0 }
               });
               faceGroup.push({
                 type: 'polygon', z: 2,
-                shape: { points: [[cx, cy], [pCurr.x, pCurr.y], [pMidRight.x, pMidRight.y]] },
+                shape: { points: [[cx, cy], [pCurr.x, pCurr.y], [mRight.x, mRight.y]] },
                 style: { fill: this._hexToRgba(mainColor, opLow), lineWidth: 0 }
               });
 
               if (lineWidth > 0) {
                 lineGroup.push({
-                  type: 'polyline', z: 3,
-                  shape: { points: [[pMidLeft.x, pMidLeft.y], [pCurr.x, pCurr.y], [pMidRight.x, pMidRight.y]] },
+                  type: 'polyline', z: 3, shape: { points: [[mLeft.x, mLeft.y], [pCurr.x, pCurr.y], [mRight.x, mRight.y]] },
                   style: { stroke: mainColor, fill: 'none', lineWidth: lineWidth, opacity: 1, lineJoin: 'round', lineCap: 'round', miterLimit: 2 }
                 });
                 lineGroup.push({
-                  type: 'line', z: 2, 
-                  shape: { x1: pCurr.bx, y1: pCurr.by, x2: pCurr.x, y2: pCurr.y },
-                  style: { stroke: mainColor, fill: 'none', lineDash: [2, 3], lineWidth: 1, opacity: isHovered ? 0.8 : 0.3 }
+                  type: 'line', z: 1, shape: { x1: pCurr.bx, y1: pCurr.by, x2: pCurr.x, y2: pCurr.y },
+                  style: { stroke: mainColor, lineDash: [2, 3], lineWidth: 1, opacity: isHovered ? 0.8 : 0.3 }
                 });
               }
 
