@@ -34,9 +34,9 @@ Prism 3D Data Card 是一個自定義的 Lovelace 卡片，它能將多個實體
 
 ### 手動安裝
 
-1.  下載 `dist/prism-3d-card.js`。
+1.  下載 `prism-3d-card.js`。
 2.  將檔案上傳至 Home Assistant 的 `/config/www/` 資料夾。
-3.  在 HA 的「資源」設定中加入：`/local/dist/prism-3d-card.js?v=1.0.0` (類型為 JavaScript Module)。
+3.  在 HA 的「資源」設定中加入：`/local/prism-3d-card.js?v=1.0.0` (類型為 JavaScript Module)。
 
 ## ⚙️ 配置參數
 
@@ -54,11 +54,11 @@ Prism 3D Data Card 是一個自定義的 Lovelace 卡片，它能將多個實體
 
 ## 🛠 開發與測試
 
-本專案附帶一個 `index.html`，讓開發者可以在不安裝 Home Assistant 的情況下直接預覽效果。
+本專案附帶一個 `preview.html`，讓開發者可以在不安裝 Home Assistant 的情況下直接預覽效果。
 
-1.  確保 `dist/prism-3d-card.js` 已存在。
-2.  使用 **Live Server** (VS Code 插件) 開啟 `index.html`。
-3.  您可以修改 `index.html` 中的模擬數據來測試各種視覺邊界情況。
+1.  確保 `prism-3d-card.js` 已存在。
+2.  使用 **Live Server** (VS Code 插件) 開啟 `preview.html`。
+3.  您可以修改 `preview.html` 中的模擬數據來測試各種視覺邊界情況。
 
 ## 📝 貢獻與反饋
 
