@@ -1,6 +1,6 @@
 import "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js";
 
-const CARD_VERSION = "v1.5.2"; 
+const CARD_VERSION = "v1.5.3"; 
 
 console.info(
   `%c PRISM-3D-CARD %c ${CARD_VERSION} %c (dist) `,
@@ -56,8 +56,8 @@ class Prism3DCardEditor extends LitElement {
     return [
       { name: "mode", selector: { select: { mode: "dropdown", options: [{ label: "3D 立體", value: "3d" }, { label: "2D 平面", value: "2d" }] } } },
       { name: "chart_radius", selector: { number: { min: 10, max: 100, step: 1, unitOfMeasurement: "%", mode: "slider" } } },
-              { name: "entities", selector: { entity: { multiple: true } } },
-              {
+      { name: "entities", selector: { entity: { multiple: true } } },
+      {
         type: "expandable", title: "視覺與配色",
         schema: [
           { name: "color", selector: { text: {} } },
@@ -71,12 +71,12 @@ class Prism3DCardEditor extends LitElement {
         ]
       },
       {
-                type: "expandable", title: "視角與角度",
-                schema: [
-                  { name: "rotation", selector: { number: { min: 0, max: 360, step: 1, unitOfMeasurement: "°", mode: "slider" } } },
-                  { name: "tilt", selector: { number: { min: 0.1, max: 0.9, step: 0.05, mode: "slider" } } },
-                ]
-              },
+        type: "expandable", title: "視角與角度",
+        schema: [
+          { name: "rotation", selector: { number: { min: 0, max: 360, step: 1, unitOfMeasurement: "°", mode: "slider" } } },
+          { name: "tilt", selector: { number: { min: 0.1, max: 0.9, step: 0.05, mode: "slider" } } },
+        ]
+      },
       {
         type: "expandable", title: "背景網格",
         schema: [
@@ -146,7 +146,7 @@ class Prism3DCard extends HTMLElement {
       this.chart = echarts.init(this._container);
       
       this.chart.on('mouseover', (params) => {
-        if (params.dataIndex >= 0 && this._hoverIndex !== params.dataIndex) {
+        if (params.dataIndex !== undefined && this._hoverIndex !== params.dataIndex) {
           this._hoverIndex = params.dataIndex;
           this._updateData();
         }
@@ -161,7 +161,6 @@ class Prism3DCard extends HTMLElement {
       new ResizeObserver(() => this.chart && this.chart.resize()).observe(this._container);
     }, 100);
   }
-
 
   _updateData() {
     if (!this._hass || !this.config.entities || !this.chart) return;
@@ -208,24 +207,27 @@ class Prism3DCard extends HTMLElement {
         return { bx, by, x: bx, y: by - (percent * (radius * 0.8)), val: val };
     };
 
+    let option = {};
+
     if (is3D) {
       const count = dataValues.length;
       const w = this.chart.getWidth(), h = this.chart.getHeight();
       const cx = w / 2, cy = h / 2 + 20;
       const radius = (chartRadiusVal / 100) * Math.min(w, h) * 0.6;
 
-      this.chart.setOption({
+      option = {
         backgroundColor: 'transparent',
         tooltip: {
           show: true,
           trigger: 'item',
           enterable: false,
           confine: true,
+          appendToBody: false, // 確保在 Shadow DOM 內
           transitionDuration: 0,
           position: function (pos) {
             return [pos[0] + 20, pos[1] + 20];
           },
-          extraCssText: 'pointer-events: none !important; user-select: none !important; z-index: 9999; border:none; box-shadow:none;',
+          extraCssText: 'pointer-events: none !important; user-select: none !important; z-index: 9999; border:none !important; box-shadow:none !important;',
           backgroundColor: 'rgba(0, 0, 0, 0.85)',
           borderColor: mainColor,
           borderWidth: 1,
@@ -300,7 +302,6 @@ class Prism3DCard extends HTMLElement {
                 });
               }
 
-
               return { type: 'group', children: [...gridGroup, ...faceGroup, ...lineGroup] };
             },
             data: dataValues.map((v) => v)
@@ -308,6 +309,7 @@ class Prism3DCard extends HTMLElement {
           {
             type: 'custom',
             z: 10,
+            silent: true, 
             renderItem: (params, api) => {
               const i = params.dataIndex;
               const pts = dataValues.map((v, idx) => getP(v, idx, cx, cy, radius, rotationRad, tilt, indicators));
@@ -325,9 +327,9 @@ class Prism3DCard extends HTMLElement {
             data: dataValues.map((v) => v)
           }
         ]
-      }, true);
+      };
     } else {
-      this.chart.setOption({
+      option = {
         backgroundColor: 'transparent',
         tooltip: {
           show: true, trigger: 'item', backgroundColor: 'rgba(0, 0, 0, 0.8)', borderColor: mainColor, textStyle: { color: '#fff' }
@@ -347,8 +349,11 @@ class Prism3DCard extends HTMLElement {
             areaStyle: { color: this._hexToRgba(mainColor, areaOpacity) }
           }]
         }]
-      }, true);
+      };
     }
+
+    // --- 最終修正：不合併更新 (false) 防止 DOM 重新建立導致閃爍 ---
+    this.chart.setOption(option, false);
   }
 
   _hexToRgba(hex, opacity) {
