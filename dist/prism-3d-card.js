@@ -54,20 +54,13 @@ class Prism3DCardEditor extends LitElement {
 
   _schema() {
     return [
-      { name: "color", selector: { text: {} } },
       { name: "mode", selector: { select: { mode: "dropdown", options: [{ label: "3D 立體", value: "3d" }, { label: "2D 平面", value: "2d" }] } } },
       { name: "chart_radius", selector: { number: { min: 10, max: 100, step: 1, unitOfMeasurement: "%", mode: "slider" } } },
       { name: "entities", selector: { entity: { multiple: true } } },
-      {
-        type: "expandable", title: "視角與角度",
+            {
+        type: "expandable", title: "視覺與配色",
         schema: [
-          { name: "rotation", selector: { number: { min: 0, max: 360, step: 1, unitOfMeasurement: "°", mode: "slider" } } },
-          { name: "tilt", selector: { number: { min: 0.1, max: 0.9, step: 0.05, mode: "slider" } } },
-        ],
-      },
-      {
-        type: "expandable", title: "視覺精修",
-        schema: [
+          { name: "color", selector: { text: {} } },
           { name: "line_width", selector: { number: { min: 0, max: 10, step: 1, mode: "slider" } } },
           { name: "area_opacity", selector: { number: { min: 0.1, max: 1, step: 0.05, mode: "slider" } } },
           { name: "text_size", selector: { number: { min: 8, max: 24, step: 1, mode: "slider" } } },
@@ -76,6 +69,13 @@ class Prism3DCardEditor extends LitElement {
           { name: "text_stroke_color", selector: { text: {} } },
           { name: "opacity_variation", selector: { number: { min: 0, max: 0.2, step: 0.01, mode: "slider" } } },
         ]
+      },
+      {
+        type: "expandable", title: "視角與角度",
+        schema: [
+          { name: "rotation", selector: { number: { min: 0, max: 360, step: 1, unitOfMeasurement: "°", mode: "slider" } } },
+          { name: "tilt", selector: { number: { min: 0.1, max: 0.9, step: 0.05, mode: "slider" } } },
+        ],
       },
       {
         type: "expandable", title: "背景網格",
