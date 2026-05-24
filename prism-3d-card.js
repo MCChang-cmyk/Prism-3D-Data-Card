@@ -146,8 +146,8 @@ class Prism3DCard extends HTMLElement {
       this.chart = echarts.init(this._container);
       
       this.chart.on('mouseover', (params) => {
-  // 只有當 index 真的改變時才觸發重繪，減少不必要的渲染負擔
-  if (params.dataIndex !== undefined && this._hoverIndex !== params.dataIndex) {
+  // params.dataIndex 為 0 或以上時才處理，排除背景網格或其他雜訊
+  if (params.dataIndex >= 0 && this._hoverIndex !== params.dataIndex) {
     this._hoverIndex = params.dataIndex;
     this._updateData();
   }
