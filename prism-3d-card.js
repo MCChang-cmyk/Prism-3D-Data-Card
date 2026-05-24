@@ -1,6 +1,6 @@
 import "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js";
 
-console.info("%c PRISM-3D-CARD %c v1.0.0 (dist) ", "color: white; background: #E13460; font-weight: 700;", "color: #E13460; background: white; font-weight: 700;");
+console.info("%c PRISM-3D-CARD %c v1.1.0 ", "color: white; background: #E13460; font-weight: 700;", "color: #E13460; background: white; font-weight: 700;");
 
 // --- 環境相容性修正 ---
 let LitElement = window.LitElement;
@@ -22,7 +22,6 @@ class Prism3DCardEditor extends LitElement {
   static get properties() { return { hass: {}, _config: { state: true } }; }
   setConfig(config) { this._config = { ...config }; }
 
-  // 標籤映射邏輯，解決介面留白問題
   _labelFor(name) {
     const labels = {
       color: "圖表主色",
@@ -165,6 +164,10 @@ class Prism3DCard extends HTMLElement {
     const rotationRad = (rotationDeg * Math.PI) / 180;
     const tilt = parseFloat(this.config.tilt) || 0.4;
 
+    // --- 斑馬紋參數初始化 ---
+    const gOp1 = this.config.grid_opacity_1 !== undefined ? parseFloat(this.config.grid_opacity_1) : 0.02;
+    const gOp2 = this.config.grid_opacity_2 !== undefined ? parseFloat(this.config.grid_opacity_2) : 0.05;
+
     const entities = (this.config.entities || []).map(ent => {
       return typeof ent === 'string' ? { entity: ent, max: 100 } : ent;
     }).filter(ent => ent.entity);
@@ -187,7 +190,6 @@ class Prism3DCard extends HTMLElement {
       const w = this.chart.getWidth(), h = this.chart.getHeight();
       const cx = w / 2;
       const cy = h / 2 + 20;
-
       const radius = (chartRadiusVal / 100) * Math.min(w, h) * 0.6;
 
       const getP = (val, i, offset = 0) => {
@@ -201,26 +203,19 @@ class Prism3DCard extends HTMLElement {
       this.chart.setOption({
         backgroundColor: 'transparent',
         tooltip: {
-          show: true,
-          trigger: 'item',
-          enterable: false,
-          confine: true,
+          show: true, trigger: 'item', enterable: false, confine: true,
           extraCssText: 'pointer-events: none;',
-          backgroundColor: 'rgba(0, 0, 0, 0.85)',
-          borderColor: mainColor,
-          borderWidth: 1,
+          backgroundColor: 'rgba(0, 0, 0, 0.85)', borderColor: mainColor, borderWidth: 1,
           textStyle: { color: '#fff', fontSize: 12 },
           formatter: (params) => {
             let html = `<div style="padding: 5px; min-width: 120px;">`;
             indicators.forEach((ind, idx) => {
-              html += `
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+              html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
                   <span style="color:#94a3b8; margin-right:15px;">${ind.name}</span>
                   <b style="color:${mainColor}">${dataValues[idx]}</b>
                 </div>`;
             });
-            html += `</div>`;
-            return html;
+            return html + `</div>`;
           }
         },
         xAxis: { show: false, min: 0, max: w },
@@ -229,18 +224,12 @@ class Prism3DCard extends HTMLElement {
         series: [{
           type: 'custom',
           renderItem: (params, api) => {
-            const gridGroup = [];
-            const faceGroup = [];
-            const lineGroup = [];
-            const textGroup = [];
-            
+            const gridGroup = [], faceGroup = [], lineGroup = [], textGroup = [];
             const pts = dataValues.map((v, i) => getP(v, i));
             const opVar = parseFloat(this.config.opacity_variation) || 0.02;
 
+            // --- 3D 斑馬紋邏輯修正 ---
             const gridSteps = 5;
-            const gOp1 = this.config.grid_opacity_1 !== undefined ? this.config.grid_opacity_1 : 0.02;
-            const gOp2 = this.config.grid_opacity_2 !== undefined ? this.config.grid_opacity_2 : 0.05;
-
             for (let s = gridSteps; s >= 1; s--) {
               const stepR = radius * (s / gridSteps);
               const stepPoints = [];
@@ -253,18 +242,26 @@ class Prism3DCard extends HTMLElement {
                   gridGroup.push({ type: 'line', shape: { x1: cx, y1: cy, x2: gx, y2: gy }, style: { stroke: gridColor, opacity: gridLineOp, lineWidth: 1 } });
                 }
               }
-              gridGroup.push({ type: 'polygon', shape: { points: stepPoints }, style: { fill: this._hexToRgba(gridColor, s % 2 === 0 ? gOp2 : gOp1), stroke: gridColor, opacity: gridLineOp, lineWidth: 1 } });
+              // 繪製背景面 (s % 2 切換透明度)
+              gridGroup.push({
+                type: 'polygon',
+                shape: { points: stepPoints },
+                style: { 
+                  fill: this._hexToRgba(gridColor, s % 2 === 0 ? gOp2 : gOp1),
+                  stroke: gridColor, 
+                  opacity: gridLineOp, 
+                  lineWidth: 1 
+                }
+              });
             }
 
             for (let i = 0; i < count; i++) {
-              const p1 = pts[i];
-              const p2 = pts[(i + 1) % count];
+              const p1 = pts[i], p2 = pts[(i + 1) % count];
               const pMid = { x: (p1.bx + p2.bx) / 2, y: (p1.by + p2.by) / 2 };
 
               if (p1.val > 0) {
                 lineGroup.push({
-                  type: 'line', z: 5,
-                  shape: { x1: p1.bx, y1: p1.by, x2: p1.x, y2: p1.y },
+                  type: 'line', z: 5, shape: { x1: p1.bx, y1: p1.by, x2: p1.x, y2: p1.y },
                   style: { stroke: mainColor, fill: 'none', lineDash: [2, 3], lineWidth: 1, opacity: 0.5 }
                 });
               }
@@ -273,38 +270,23 @@ class Prism3DCard extends HTMLElement {
               const opRight = Math.min(1, Math.max(0, areaOpacity - opVar));
 
               if (opVar < 0.001) {
-                faceGroup.push({ 
-                  type: 'polygon', 
-                  shape: { points: [[cx, cy], [p1.x, p1.y], [p2.x, p2.y]] }, 
-                  style: { fill: this._hexToRgba(mainColor, areaOpacity), lineWidth: 0 } 
-                });
+                faceGroup.push({ type: 'polygon', shape: { points: [[cx, cy], [p1.x, p1.y], [p2.x, p2.y]] }, style: { fill: this._hexToRgba(mainColor, areaOpacity), lineWidth: 0 } });
               } else {
-                faceGroup.push({ 
-                  type: 'polygon', 
-                  shape: { points: [[cx, cy], [p1.x, p1.y], [pMid.x, pMid.y]] }, 
-                  style: { fill: this._hexToRgba(mainColor, opLeft), lineWidth: 0 } 
-                });
-                faceGroup.push({ 
-                  type: 'polygon', 
-                  shape: { points: [[cx, cy], [pMid.x, pMid.y], [p2.x, p2.y]] }, 
-                  style: { fill: this._hexToRgba(mainColor, opRight), lineWidth: 0 } 
-                });
+                faceGroup.push({ type: 'polygon', shape: { points: [[cx, cy], [p1.x, p1.y], [pMid.x, pMid.y]] }, style: { fill: this._hexToRgba(mainColor, opLeft), lineWidth: 0 } });
+                faceGroup.push({ type: 'polygon', shape: { points: [[cx, cy], [pMid.x, pMid.y], [p2.x, p2.y]] }, style: { fill: this._hexToRgba(mainColor, opRight), lineWidth: 0 } });
               }
 
               lineGroup.push({
-                type: 'polyline', z: 6,
-                shape: { points: [[p1.x, p1.y], [pMid.x, pMid.y], [p2.x, p2.y]] },
+                type: 'polyline', z: 6, shape: { points: [[p1.x, p1.y], [pMid.x, pMid.y], [p2.x, p2.y]] },
                 style: { stroke: mainColor, fill: 'none', lineWidth: lineWidth, opacity: 0.9, lineJoin: 'round', lineCap: 'round', miterLimit: 2 }
               });
 
               textGroup.push({
                 type: 'text', z: 10,
                 style: {
-                  text: indicators[i].name,
-                  x: p1.x, y: p1.y - (textSize + 5), 
+                  text: indicators[i].name, x: p1.x, y: p1.y - (textSize + 5), 
                   fill: '#94a3b8', font: `${textSize}px sans-serif`,
-                  textAlign: 'center', textVerticalAlign: 'bottom',
-                  stroke: '#000', lineWidth: 2
+                  textAlign: 'center', textVerticalAlign: 'bottom', stroke: '#000', lineWidth: 2
                 }
               });
             }
@@ -314,24 +296,24 @@ class Prism3DCard extends HTMLElement {
         }]
       }, true);
     } else {
+      // --- 2D 模式：斑馬紋同步修正 ---
       this.chart.setOption({
         backgroundColor: 'transparent',
         tooltip: {
-          show: true,
-          trigger: 'item',
-          backgroundColor: 'rgba(0, 0, 0, 0.8)',
-          borderColor: mainColor,
-          textStyle: { color: '#fff' }
+          show: true, trigger: 'item', backgroundColor: 'rgba(0, 0, 0, 0.8)', borderColor: mainColor, textStyle: { color: '#fff' }
         },
         xAxis: { show: false }, yAxis: { show: false },
         radar: {
-          indicator: indicators,
-          startAngle: 90 + rotationDeg,
-          shape: 'polygon', radius: `${chartRadiusVal}%`,
-          center: ['50%', '50%'],
+          indicator: indicators, startAngle: 90 + rotationDeg, shape: 'polygon', radius: `${chartRadiusVal}%`, center: ['50%', '50%'],
           axisName: { fontSize: textSize, fontWeight: '500', color: '#94a3b8' },
           splitLine: { lineStyle: { color: this._hexToRgba(gridColor, gridLineOp) } },
-          splitArea: { show: true, areaStyle: { color: [this._hexToRgba(gridColor, 0.02), this._hexToRgba(gridColor, 0.05)].reverse() } }
+          splitArea: { 
+            show: true, 
+            areaStyle: { 
+              // 使用相同的 gOp1 與 gOp2 參數
+              color: [this._hexToRgba(gridColor, gOp2), this._hexToRgba(gridColor, gOp1)].reverse() 
+            } 
+          }
         },
         series: [{
           type: 'radar',
