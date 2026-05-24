@@ -6,7 +6,7 @@
 
 ## 📖 簡介
 
-Prism 3D Data Card 是一個自定義的 Lovelace 卡片，它能將多個實體的數值轉化為精美的 3D 稜鏡或 2D 雷達圖。這款卡片特別適合用於展示植物生長參數、環境感測器數據、或是任何需要多維度比較的數值。
+Prism 3D Data Card 是一個自定義的 Lovelace 卡片，它能將多個實體的數值轉化為精美的 3D 稜鏡或 2D 雷達圖。這款卡片特別適合用於展示環境感測器數據、或是任何需要多維度比較的數值。
 
 ## ✨ 主要功能
 
@@ -19,9 +19,9 @@ Prism 3D Data Card 是一個自定義的 Lovelace 卡片，它能將多個實體
 -   **動態互動**：內建 ECharts 驅動，支持 Tooltip 數據顯示。
 -   **圖形化編輯器**：支援 Home Assistant 內建的 UI 編輯器，無需手動修改 YAML 即可完成所有設定。
 
-## 📸 視覺效果
+## Preview
 
-*(建議在此處放置預覽圖或 GIF)*
+<img src="images/prism-3d-preview.jpg" width="450" />
 
 ## 🚀 安裝方式
 
