@@ -1,5 +1,7 @@
 import "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js";
 
+console.info("%c PRISM-3D-CARD %c v1.0.0 (dist) ", "color: white; background: #E13460; font-weight: 700;", "color: #E13460; background: white; font-weight: 700;");
+
 // --- 環境相容性修正 ---
 let LitElement = window.LitElement;
 if (!LitElement) {
@@ -70,11 +72,36 @@ class Prism3DCardEditor extends LitElement {
   }
 
   _valueChanged(ev) {
+    if (!this._config || !ev.detail.value) return;
+    
     const nextConfig = { ...ev.detail.value };
+    
+    // --- 實體選擇器邏輯修正 ---
     if (nextConfig.entities) {
-      nextConfig.entities = nextConfig.entities.map(ent => typeof ent === 'string' ? { entity: ent, name: "", max: 100 } : ent);
+      nextConfig.entities = nextConfig.entities
+        .filter(ent => ent !== null && ent !== undefined) // 移除空值
+        .map(ent => {
+          // 如果是字串（新選取的實體），轉換為標準物件
+          if (typeof ent === 'string') {
+            return { entity: ent, name: "", max: 100 };
+          }
+          // 如果已經是物件，確保它包含 entity 屬性並保留原始設定
+          if (typeof ent === 'object' && ent.entity) {
+            return { 
+              ...ent, 
+              name: ent.name || "", 
+              max: ent.max !== undefined ? ent.max : 100 
+            };
+          }
+          return ent;
+        });
     }
-    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: nextConfig }, bubbles: true, composed: true }));
+
+    this.dispatchEvent(new CustomEvent("config-changed", { 
+      detail: { config: nextConfig }, 
+      bubbles: true, 
+      composed: true 
+    }));
   }
 
   render() {
@@ -139,7 +166,12 @@ class Prism3DCard extends HTMLElement {
     const rotationRad = (rotationDeg * Math.PI) / 180;
     const tilt = parseFloat(this.config.tilt) || 0.4;
 
-    const entities = this.config.entities.map(ent => typeof ent === 'string' ? { entity: ent } : ent);
+    // --- 2. 數據預處理 (防呆版) ---
+    const entities = (this.config.entities || []).map(ent => {
+      // 確保無論儲存格式如何，都能拿到 entity ID
+      const entityId = typeof ent === 'string' ? ent : ent.entity;
+      return typeof ent === 'string' ? { entity: ent, max: 100 } : ent;
+    }).filter(ent => ent.entity); // 確保 entity 欄位存在
     const dataValues = entities.map(ent => {
       const state = this._hass.states[ent.entity];
       return state ? parseFloat(state.state) || 0 : 0;
