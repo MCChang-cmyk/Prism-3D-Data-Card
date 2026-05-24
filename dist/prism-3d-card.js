@@ -231,103 +231,108 @@ class Prism3DCard extends HTMLElement {
         },
         xAxis: { show: false, min: 0, max: w }, yAxis: { show: false, min: 0, max: h },
         radar: { show: false },
-        series: [{
-          type: 'custom',
-          renderItem: (params, api) => {
-            const i = params.dataIndex;
-            const count = dataValues.length;
-            const pts = dataValues.map((v, idx) => getP(v, idx));
-            const opVar = parseFloat(this.config.opacity_variation) || 0.02;
-            const isHovered = (i === this._hoverIndex);
-            
-            // --- 核心修正：亮起效果僅影響色塊透明度 ---
-            const highlightBonus = isHovered ? 0.3 : 0;
+        series: [
+          // --- 第一組 Series：負責背景、色塊、稜線 ---
+          {
+            type: 'custom',
+            renderItem: (params, api) => {
+              const i = params.dataIndex;
+              const count = dataValues.length;
+              const pts = dataValues.map((v, idx) => getP(v, idx));
+              const opVar = parseFloat(this.config.opacity_variation) || 0.02;
+              const isHovered = (i === this._hoverIndex);
+              const highlightBonus = isHovered ? 0.3 : 0;
 
-            const gridGroup = [], faceGroup = [], lineGroup = [], textGroup = [];
+              const gridGroup = [], faceGroup = [], lineGroup = [];
 
-            // 1. 背景網格（依然只由第一個數據繪製一次）
-            if (i === 0) {
-              const gridSteps = 5;
-              for (let s = gridSteps; s >= 1; s--) {
-                const stepR = radius * (s / gridSteps);
-                const stepPoints = [];
-                for (let j = 0; j < count; j++) {
-                  const angle = (Math.PI * 2 / count) * j - Math.PI / 2 + rotationRad;
-                  const gx = cx + Math.cos(angle) * stepR;
-                  const gy = cy + Math.sin(angle) * stepR * tilt;
-                  stepPoints.push([gx, gy]);
-                  if (s === gridSteps) {
-                    gridGroup.push({ type: 'line', shape: { x1: cx, y1: cy, x2: gx, y2: gy }, style: { stroke: gridColor, opacity: gridLineOp, lineWidth: 1 } });
+              // 1. 背景網格 (z: 1)
+              if (i === 0) {
+                const gridSteps = 5;
+                for (let s = gridSteps; s >= 1; s--) {
+                  const stepR = radius * (s / gridSteps);
+                  const stepPoints = [];
+                  for (let j = 0; j < count; j++) {
+                    const angle = (Math.PI * 2 / count) * j - Math.PI / 2 + rotationRad;
+                    const gx = cx + Math.cos(angle) * stepR;
+                    const gy = cy + Math.sin(angle) * stepR * tilt;
+                    stepPoints.push([gx, gy]);
+                    if (s === gridSteps) {
+                      gridGroup.push({ type: 'line', shape: { x1: cx, y1: cy, x2: gx, y2: gy }, style: { stroke: gridColor, opacity: gridLineOp, lineWidth: 1 } });
+                    }
                   }
+                  gridGroup.push({ type: 'polygon', z: 1, shape: { points: stepPoints }, style: { fill: this._hexToRgba(gridColor, s % 2 === 0 ? gOp2 : gOp1), stroke: gridColor, opacity: gridLineOp, lineWidth: 1 } });
                 }
-                gridGroup.push({ type: 'polygon', shape: { points: stepPoints }, style: { fill: this._hexToRgba(gridColor, s % 2 === 0 ? gOp2 : gOp1), stroke: gridColor, opacity: gridLineOp, lineWidth: 1 } });
               }
-            }
 
-            // 繪製以 i 為中心的左右兩側
-            const pCurr = pts[i];
-            const pPrev = pts[(i - 1 + count) % count];
-            const pNext = pts[(i + 1) % count];
-            
-            // 計算中點用於 3D 陰影切換
-            const pMidLeft = { x: (pPrev.bx + pCurr.bx) / 2, y: (pPrev.by + pCurr.by) / 2 };
-            const pMidRight = { x: (pCurr.bx + pNext.bx) / 2, y: (pCurr.by + pNext.by) / 2 };
+              const pCurr = pts[i];
+              const pPrev = pts[(i - 1 + count) % count];
+              const pNext = pts[(i + 1) % count];
+              const pMidLeft = { x: (pPrev.bx + pCurr.bx) / 2, y: (pPrev.by + pCurr.by) / 2 };
+              const pMidRight = { x: (pCurr.bx + pNext.bx) / 2, y: (pCurr.by + pNext.by) / 2 };
 
-            const opHigh = Math.min(1, Math.max(0, areaOpacity + opVar + highlightBonus));
-            const opLow = Math.min(1, Math.max(0, areaOpacity - opVar + highlightBonus));
+              const opHigh = Math.min(1, Math.max(0, areaOpacity + opVar + highlightBonus));
+              const opLow = Math.min(1, Math.max(0, areaOpacity - opVar + highlightBonus));
 
-            // 2. 繪製左半部面 (i-1 到 i)
-            faceGroup.push({
-              type: 'polygon',
-              shape: { points: [[cx, cy], [pMidLeft.x, pMidLeft.y], [pCurr.x, pCurr.y]] },
-              style: { fill: this._hexToRgba(mainColor, opHigh), lineWidth: 0 }
-            });
-
-            // 3. 繪製右半部面 (i 到 i+1)
-            faceGroup.push({
-              type: 'polygon',
-              shape: { points: [[cx, cy], [pCurr.x, pCurr.y], [pMidRight.x, pMidRight.y]] },
-              style: { fill: this._hexToRgba(mainColor, opLow), lineWidth: 0 }
-            });
-
-            // 4. 稜線與垂直虛線
-            if (lineWidth > 0) {
-              // --- 修正：稜線保持原本的主色與粗細，僅增加 z 值確保浮在色塊上方 ---
-              lineGroup.push({
-                type: 'polyline', z: 6,
-                shape: { points: [[pMidLeft.x, pMidLeft.y], [pCurr.x, pCurr.y], [pMidRight.x, pMidRight.y]] },
-                style: { 
-                  stroke: mainColor, // 保持圖表主色
-                  fill: 'none', 
-                  lineWidth: lineWidth, // 保持原本粗細
-                  opacity: 1, 
-                  lineJoin: 'round', lineCap: 'round', miterLimit: 2 
-                }
+              // 2. 色塊 (z: 2)
+              faceGroup.push({
+                type: 'polygon', z: 2,
+                shape: { points: [[cx, cy], [pMidLeft.x, pMidLeft.y], [pCurr.x, pCurr.y]] },
+                style: { fill: this._hexToRgba(mainColor, opHigh), lineWidth: 0 }
               });
-              
-              // 當前點的支撐虛線（依然可以稍微變亮以提供支撐感）
-              lineGroup.push({
-                type: 'line', z: 5, 
-                shape: { x1: pCurr.bx, y1: pCurr.by, x2: pCurr.x, y2: pCurr.y },
-                style: { stroke: mainColor, fill: 'none', lineDash: [2, 3], lineWidth: 1, opacity: isHovered ? 0.8 : 0.3 }
+              faceGroup.push({
+                type: 'polygon', z: 2,
+                shape: { points: [[cx, cy], [pCurr.x, pCurr.y], [pMidRight.x, pMidRight.y]] },
+                style: { fill: this._hexToRgba(mainColor, opLow), lineWidth: 0 }
               });
-            }
 
-            // 5. 文字
-            textGroup.push({
-              type: 'text', z: 10,
-              style: {
-                text: indicators[i].name, x: pCurr.x, y: pCurr.y - (textSize + 5), 
-                fill: isHovered ? '#fff' : textColor,
-                font: `${isHovered ? 'bold ' : ''}${textSize}px sans-serif`,
-                textAlign: 'center', textVerticalAlign: 'bottom', stroke: textStrokeColor, lineWidth: textStrokeWidth
+              // 3. 稜線 (z: 3)
+              if (lineWidth > 0) {
+                lineGroup.push({
+                  type: 'polyline', z: 3,
+                  shape: { points: [[pMidLeft.x, pMidLeft.y], [pCurr.x, pCurr.y], [pMidRight.x, pMidRight.y]] },
+                  style: { stroke: mainColor, fill: 'none', lineWidth: lineWidth, opacity: 1, lineJoin: 'round', lineCap: 'round' }
+                });
+                lineGroup.push({
+                  type: 'line', z: 2, 
+                  shape: { x1: pCurr.bx, y1: pCurr.by, x2: pCurr.x, y2: pCurr.y },
+                  style: { stroke: mainColor, fill: 'none', lineDash: [2, 3], lineWidth: 1, opacity: isHovered ? 0.8 : 0.3 }
+                });
               }
-            });
 
-            return { type: 'group', children: [...gridGroup, ...faceGroup, ...lineGroup, ...textGroup] };
+              return { type: 'group', children: [...gridGroup, ...faceGroup, ...lineGroup] };
+            },
+            data: dataValues.map((v) => v)
           },
-          data: dataValues.map((v) => v)
-        }]
+          // --- 第二組 Series：專門負責繪製文字，確保永遠在最頂層 (z: 10) ---
+          {
+            type: 'custom',
+            z: 10, 
+            renderItem: (params, api) => {
+              const i = params.dataIndex;
+              const count = dataValues.length;
+              const pts = dataValues.map((v, idx) => getP(v, idx));
+              const pCurr = pts[i];
+              const isHovered = (i === this._hoverIndex);
+
+              return {
+                type: 'text',
+                z: 10,
+                style: {
+                  text: indicators[i].name, 
+                  x: pCurr.x, 
+                  y: pCurr.y - (textSize + 5), 
+                  fill: isHovered ? '#fff' : textColor,
+                  font: `${isHovered ? 'bold ' : ''}${textSize}px sans-serif`,
+                  textAlign: 'center', 
+                  textVerticalAlign: 'bottom', 
+                  stroke: textStrokeColor, 
+                  lineWidth: textStrokeWidth
+                }
+              };
+            },
+            data: dataValues.map((v) => v)
+          }
+        ]
       }, true);
     } else {
       // --- 2D 模式 ---
