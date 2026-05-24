@@ -146,12 +146,11 @@ class Prism3DCard extends HTMLElement {
       this.chart = echarts.init(this._container);
       
       this.chart.on('mouseover', (params) => {
-  // params.dataIndex 為 0 或以上時才處理，排除背景網格或其他雜訊
-  if (params.dataIndex >= 0 && this._hoverIndex !== params.dataIndex) {
-    this._hoverIndex = params.dataIndex;
-    this._updateData();
-  }
-});
+        if (params.dataIndex >= 0 && this._hoverIndex !== params.dataIndex) {
+          this._hoverIndex = params.dataIndex;
+          this._updateData();
+        }
+      });
 
       this.chart.on('mouseout', () => {
         this._hoverIndex = -1;
@@ -223,21 +222,17 @@ class Prism3DCard extends HTMLElement {
           enterable: false,
           confine: true,
           transitionDuration: 0,
-          // --- 修正 1：位置偏移 ---
-          // 讓 Tooltip 跟隨滑鼠，但保持 20px 的安全距離，避免重疊引發閃爍
-          position: function (pos, params, dom, rect, size) {
+          position: function (pos) {
             return [pos[0] + 20, pos[1] + 20];
           },
-          // --- 修正 2：CSS 強制穿透 ---
-          extraCssText: 'pointer-events: none !important; z-index: 9999; border:none; box-shadow:none;',
+          extraCssText: 'pointer-events: none !important; user-select: none !important; z-index: 9999; border:none; box-shadow:none;',
           backgroundColor: 'rgba(0, 0, 0, 0.85)',
           borderColor: mainColor,
           borderWidth: 1,
           textStyle: { color: '#fff', fontSize: 12 },
           formatter: (params) => {
-            // 只顯示單一實體的數值，增加易讀性並減少計算負擔
             const i = params.dataIndex;
-            if (i === undefined) return '';
+            if (i === undefined || i < 0) return '';
             return `<div style="padding: 5px;">
                 <span style="color:#94a3b8; margin-right:15px;">${indicators[i].name}</span>
                 <b style="color:${mainColor}">${dataValues[i]}</b>
