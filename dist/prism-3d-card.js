@@ -1,6 +1,6 @@
 import "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js";
 
-const CARD_VERSION = "v1.4.0"; // 方便後續統一管理版本
+const CARD_VERSION = "v1.4.0"; 
 
 console.info(
   `%c PRISM-3D-CARD %c ${CARD_VERSION} %c (dist) `,
@@ -8,7 +8,6 @@ console.info(
   "color: #E13460; background: white; font-weight: 700;",
   "color: #94a3b8; background: transparent;"
 );
-
 
 // --- 環境相容性修正 ---
 let LitElement = window.LitElement;
@@ -69,7 +68,6 @@ class Prism3DCardEditor extends LitElement {
       {
         type: "expandable", title: "視覺精修",
         schema: [
-          // 【修正】 min 改為 0
           { name: "line_width", selector: { number: { min: 0, max: 10, step: 1, mode: "slider" } } },
           { name: "area_opacity", selector: { number: { min: 0.1, max: 1, step: 0.05, mode: "slider" } } },
           { name: "text_size", selector: { number: { min: 8, max: 24, step: 1, mode: "slider" } } },
@@ -146,6 +144,19 @@ class Prism3DCard extends HTMLElement {
 
     setTimeout(() => {
       this.chart = echarts.init(this._container);
+      
+      this.chart.on('mouseover', (params) => {
+        if (params.componentType === 'series') {
+          this._hoverIndex = params.dataIndex;
+          this._updateData();
+        }
+      });
+
+      this.chart.on('mouseout', () => {
+        this._hoverIndex = -1;
+        this._updateData();
+      });
+
       this._updateData();
       new ResizeObserver(() => this.chart && this.chart.resize()).observe(this._container);
     }, 100);
@@ -205,7 +216,7 @@ class Prism3DCard extends HTMLElement {
         backgroundColor: 'transparent',
         tooltip: {
           show: true, trigger: 'item', enterable: false, confine: true, extraCssText: 'pointer-events: none;',
-          backgroundColor: 'rgba(0, 0, 0, 0.85)', borderColor: mainColor, borderWidth: 1,
+          backgroundColor: 'rgba(0, 0, 0, 0.85)', borderColor: 'rgba(255, 255, 255, 0.2)', borderWidth: 1,
           textStyle: { color: '#fff', fontSize: 12 },
           formatter: (params) => {
             let html = `<div style="padding: 5px; min-width: 120px;">`;
@@ -223,70 +234,103 @@ class Prism3DCard extends HTMLElement {
         series: [{
           type: 'custom',
           renderItem: (params, api) => {
-            const gridGroup = [], faceGroup = [], lineGroup = [], textGroup = [];
-            const pts = dataValues.map((v, i) => getP(v, i));
+            const i = params.dataIndex;
+            const count = dataValues.length;
+            const pts = dataValues.map((v, idx) => getP(v, idx));
             const opVar = parseFloat(this.config.opacity_variation) || 0.02;
+            const isHovered = (i === this._hoverIndex);
+            
+            // --- 核心修正：亮起效果僅影響色塊透明度 ---
+            const highlightBonus = isHovered ? 0.3 : 0;
 
-            const gridSteps = 5;
-            for (let s = gridSteps; s >= 1; s--) {
-              const stepR = radius * (s / gridSteps);
-              const stepPoints = [];
-              for (let i = 0; i < count; i++) {
-                const angle = (Math.PI * 2 / count) * i - Math.PI / 2 + rotationRad;
-                const gx = cx + Math.cos(angle) * stepR;
-                const gy = cy + Math.sin(angle) * stepR * tilt;
-                stepPoints.push([gx, gy]);
-                if (s === gridSteps) {
-                  gridGroup.push({ type: 'line', shape: { x1: cx, y1: cy, x2: gx, y2: gy }, style: { stroke: gridColor, opacity: gridLineOp, lineWidth: 1 } });
+            const gridGroup = [], faceGroup = [], lineGroup = [], textGroup = [];
+
+            // 1. 背景網格（依然只由第一個數據繪製一次）
+            if (i === 0) {
+              const gridSteps = 5;
+              for (let s = gridSteps; s >= 1; s--) {
+                const stepR = radius * (s / gridSteps);
+                const stepPoints = [];
+                for (let j = 0; j < count; j++) {
+                  const angle = (Math.PI * 2 / count) * j - Math.PI / 2 + rotationRad;
+                  const gx = cx + Math.cos(angle) * stepR;
+                  const gy = cy + Math.sin(angle) * stepR * tilt;
+                  stepPoints.push([gx, gy]);
+                  if (s === gridSteps) {
+                    gridGroup.push({ type: 'line', shape: { x1: cx, y1: cy, x2: gx, y2: gy }, style: { stroke: gridColor, opacity: gridLineOp, lineWidth: 1 } });
+                  }
                 }
+                gridGroup.push({ type: 'polygon', shape: { points: stepPoints }, style: { fill: this._hexToRgba(gridColor, s % 2 === 0 ? gOp2 : gOp1), stroke: gridColor, opacity: gridLineOp, lineWidth: 1 } });
               }
-              gridGroup.push({ type: 'polygon', shape: { points: stepPoints }, style: { fill: this._hexToRgba(gridColor, s % 2 === 0 ? gOp2 : gOp1), stroke: gridColor, opacity: gridLineOp, lineWidth: 1 } });
             }
 
-            for (let i = 0; i < count; i++) {
-              const p1 = pts[i], p2 = pts[(i + 1) % count];
-              const pMid = { x: (p1.bx + p2.bx) / 2, y: (p1.by + p2.by) / 2 };
+            // 繪製以 i 為中心的左右兩側
+            const pCurr = pts[i];
+            const pPrev = pts[(i - 1 + count) % count];
+            const pNext = pts[(i + 1) % count];
+            
+            // 計算中點用於 3D 陰影切換
+            const pMidLeft = { x: (pPrev.bx + pCurr.bx) / 2, y: (pPrev.by + pCurr.by) / 2 };
+            const pMidRight = { x: (pCurr.bx + pNext.bx) / 2, y: (pCurr.by + pNext.by) / 2 };
 
-              // 【修正】垂直虛線：僅在 lineWidth > 0 時繪製，增加層次感
-              if (p1.val > 0 && lineWidth > 0) {
-                lineGroup.push({
-                  type: 'line', z: 5, shape: { x1: p1.bx, y1: p1.by, x2: p1.x, y2: p1.y },
-                  style: { stroke: mainColor, fill: 'none', lineDash: [2, 3], lineWidth: 1, opacity: 0.3 }
-                });
-              }
+            const opHigh = Math.min(1, Math.max(0, areaOpacity + opVar + highlightBonus));
+            const opLow = Math.min(1, Math.max(0, areaOpacity - opVar + highlightBonus));
 
-              const opLeft = Math.min(1, Math.max(0, areaOpacity + opVar));
-              const opRight = Math.min(1, Math.max(0, areaOpacity - opVar));
-              if (opVar < 0.001) {
-                faceGroup.push({ type: 'polygon', shape: { points: [[cx, cy], [p1.x, p1.y], [p2.x, p2.y]] }, style: { fill: this._hexToRgba(mainColor, areaOpacity), lineWidth: 0 } });
-              } else {
-                faceGroup.push({ type: 'polygon', shape: { points: [[cx, cy], [p1.x, p1.y], [pMid.x, pMid.y]] }, style: { fill: this._hexToRgba(mainColor, opLeft), lineWidth: 0 } });
-                faceGroup.push({ type: 'polygon', shape: { points: [[cx, cy], [pMid.x, pMid.y], [p2.x, p2.y]] }, style: { fill: this._hexToRgba(mainColor, opRight), lineWidth: 0 } });
-              }
+            // 2. 繪製左半部面 (i-1 到 i)
+            faceGroup.push({
+              type: 'polygon',
+              shape: { points: [[cx, cy], [pMidLeft.x, pMidLeft.y], [pCurr.x, pCurr.y]] },
+              style: { fill: this._hexToRgba(mainColor, opHigh), lineWidth: 0 }
+            });
 
-              // 【修正】3D 稜線：僅在 lineWidth > 0 時繪製
-              if (lineWidth > 0) {
-                lineGroup.push({
-                  type: 'polyline', z: 6, shape: { points: [[p1.x, p1.y], [pMid.x, pMid.y], [p2.x, p2.y]] },
-                  style: { stroke: mainColor, fill: 'none', lineWidth: lineWidth, opacity: 0.9, lineJoin: 'round', lineCap: 'round', miterLimit: 2 }
-                });
-              }
+            // 3. 繪製右半部面 (i 到 i+1)
+            faceGroup.push({
+              type: 'polygon',
+              shape: { points: [[cx, cy], [pCurr.x, pCurr.y], [pMidRight.x, pMidRight.y]] },
+              style: { fill: this._hexToRgba(mainColor, opLow), lineWidth: 0 }
+            });
 
-              textGroup.push({
-                type: 'text', z: 10,
-                style: {
-                  text: indicators[i].name, x: p1.x, y: p1.y - (textSize + 5), 
-                  fill: textColor, font: `${textSize}px sans-serif`,
-                  textAlign: 'center', textVerticalAlign: 'bottom', stroke: textStrokeColor, lineWidth: textStrokeWidth
+            // 4. 稜線與垂直虛線
+            if (lineWidth > 0) {
+              // --- 修正：稜線保持原本的主色與粗細，僅增加 z 值確保浮在色塊上方 ---
+              lineGroup.push({
+                type: 'polyline', z: 6,
+                shape: { points: [[pMidLeft.x, pMidLeft.y], [pCurr.x, pCurr.y], [pMidRight.x, pMidRight.y]] },
+                style: { 
+                  stroke: mainColor, // 保持圖表主色
+                  fill: 'none', 
+                  lineWidth: lineWidth, // 保持原本粗細
+                  opacity: 1, 
+                  lineJoin: 'round', lineCap: 'round', miterLimit: 2 
                 }
               });
+              
+              // 當前點的支撐虛線（依然可以稍微變亮以提供支撐感）
+              lineGroup.push({
+                type: 'line', z: 5, 
+                shape: { x1: pCurr.bx, y1: pCurr.by, x2: pCurr.x, y2: pCurr.y },
+                style: { stroke: mainColor, fill: 'none', lineDash: [2, 3], lineWidth: 1, opacity: isHovered ? 0.8 : 0.3 }
+              });
             }
+
+            // 5. 文字
+            textGroup.push({
+              type: 'text', z: 10,
+              style: {
+                text: indicators[i].name, x: pCurr.x, y: pCurr.y - (textSize + 5), 
+                fill: isHovered ? '#fff' : textColor,
+                font: `${isHovered ? 'bold ' : ''}${textSize}px sans-serif`,
+                textAlign: 'center', textVerticalAlign: 'bottom', stroke: textStrokeColor, lineWidth: textStrokeWidth
+              }
+            });
+
             return { type: 'group', children: [...gridGroup, ...faceGroup, ...lineGroup, ...textGroup] };
           },
-          data: [0]
+          data: dataValues.map((v) => v)
         }]
       }, true);
     } else {
+      // --- 2D 模式 ---
       this.chart.setOption({
         backgroundColor: 'transparent',
         tooltip: {
@@ -303,14 +347,7 @@ class Prism3DCard extends HTMLElement {
           type: 'radar',
           data: [{
             value: dataValues, symbol: 'none',
-            // 【修正】2D 稜線：寬度為 0 時設為 0，且關閉發光效果
-            lineStyle: { 
-              color: mainColor, 
-              width: lineWidth, 
-              join: 'round', 
-              shadowBlur: lineWidth > 0 ? 10 : 0, 
-              shadowColor: this._hexToRgba(mainColor, 0.3) 
-            },
+            lineStyle: { color: mainColor, width: lineWidth, join: 'round', shadowBlur: lineWidth > 0 ? 10 : 0, shadowColor: this._hexToRgba(mainColor, 0.3) },
             areaStyle: { color: this._hexToRgba(mainColor, areaOpacity) }
           }]
         }]
