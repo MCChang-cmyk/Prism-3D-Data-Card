@@ -56,8 +56,8 @@ class Prism3DCardEditor extends LitElement {
     return [
       { name: "mode", selector: { select: { mode: "dropdown", options: [{ label: "3D 立體", value: "3d" }, { label: "2D 平面", value: "2d" }] } } },
       { name: "chart_radius", selector: { number: { min: 10, max: 100, step: 1, unitOfMeasurement: "%", mode: "slider" } } },
-      { name: "entities", selector: { entity: { multiple: true } } },
-            {
+              { name: "entities", selector: { entity: { multiple: true } } },
+              {
         type: "expandable", title: "視覺與配色",
         schema: [
           { name: "color", selector: { text: {} } },
@@ -71,12 +71,12 @@ class Prism3DCardEditor extends LitElement {
         ]
       },
       {
-        type: "expandable", title: "視角與角度",
-        schema: [
-          { name: "rotation", selector: { number: { min: 0, max: 360, step: 1, unitOfMeasurement: "°", mode: "slider" } } },
-          { name: "tilt", selector: { number: { min: 0.1, max: 0.9, step: 0.05, mode: "slider" } } },
-        ],
-      },
+                type: "expandable", title: "視角與角度",
+                schema: [
+                  { name: "rotation", selector: { number: { min: 0, max: 360, step: 1, unitOfMeasurement: "°", mode: "slider" } } },
+                  { name: "tilt", selector: { number: { min: 0.1, max: 0.9, step: 0.05, mode: "slider" } } },
+                ]
+              },
       {
         type: "expandable", title: "背景網格",
         schema: [
@@ -146,11 +146,12 @@ class Prism3DCard extends HTMLElement {
       this.chart = echarts.init(this._container);
       
       this.chart.on('mouseover', (params) => {
-        if (params.componentType === 'series') {
-          this._hoverIndex = params.dataIndex;
-          this._updateData();
-        }
-      });
+  // 只有當 index 真的改變時才觸發重繪，減少不必要的渲染負擔
+  if (params.dataIndex !== undefined && this._hoverIndex !== params.dataIndex) {
+    this._hoverIndex = params.dataIndex;
+    this._updateData();
+  }
+});
 
       this.chart.on('mouseout', () => {
         this._hoverIndex = -1;
@@ -161,6 +162,7 @@ class Prism3DCard extends HTMLElement {
       new ResizeObserver(() => this.chart && this.chart.resize()).observe(this._container);
     }, 100);
   }
+
 
   _updateData() {
     if (!this._hass || !this.config.entities || !this.chart) return;
@@ -216,30 +218,30 @@ class Prism3DCard extends HTMLElement {
       this.chart.setOption({
         backgroundColor: 'transparent',
         tooltip: {
-  show: true,
-  trigger: 'item',
-  // --- 關鍵修復：確保 Tooltip 不會攔截滑鼠事件 ---
-  enterable: false,      // 滑鼠不能進入 Tooltip 浮層
-  confine: true,         // 將 Tooltip 限制在畫布範圍內
-  transitionDuration: 0, // 設為 0 讓移動更即時，減少殘影引發的偵測錯誤
-  
-  // 透過 CSS 強制穿透
-  extraCssText: 'pointer-events: none; z-index: 9999; border:none; box-shadow:none;',
-  
-  backgroundColor: 'rgba(0, 0, 0, 0.85)',
-  borderColor: mainColor,
-  borderWidth: 1,
-  textStyle: { color: '#fff', fontSize: 12 },
+          show: true,
+          trigger: 'item',
+          // --- 關鍵修復：確保 Tooltip 不會攔截滑鼠事件 ---
+          enterable: false,      // 滑鼠不能進入 Tooltip 浮層
+          confine: true,         // 將 Tooltip 限制在畫布範圍內
+          transitionDuration: 0, // 設為 0 讓移動更即時，減少殘影引發的偵測錯誤
+          
+          // 透過 CSS 強制穿透
+          extraCssText: 'pointer-events: none; z-index: 9999; border:none; box-shadow:none;',
+          
+          backgroundColor: 'rgba(0, 0, 0, 0.85)',
+          borderColor: mainColor,
+          borderWidth: 1,
+          textStyle: { color: '#fff', fontSize: 12 },
           formatter: (params) => {
-            let html = `<div style="padding: 5px; min-width: 120px;">`;
-            indicators.forEach((ind, idx) => {
-              html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                  <span style="color:#94a3b8; margin-right:15px;">${ind.name}</span>
-                  <b style="color:${mainColor}">${dataValues[idx]}</b>
-                </div>`;
-            });
-            return html + `</div>`;
-          }
+              let html = `<div style="padding: 5px; min-width: 120px;">`;
+              indicators.forEach((ind, idx) => {
+                html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                    <span style="color:#94a3b8; margin-right:15px;">${ind.name}</span>
+                    <b style="color:${mainColor}">${dataValues[idx]}</b>
+                  </div>`;
+              });
+              return html + `</div>`;
+            }
         },
         xAxis: { show: false, min: 0, max: w }, yAxis: { show: false, min: 0, max: h },
         radar: { show: false },
@@ -301,6 +303,7 @@ class Prism3DCard extends HTMLElement {
                   style: { stroke: mainColor, lineDash: [2, 3], lineWidth: 1, opacity: isHovered ? 0.8 : 0.3 }
                 });
               }
+
 
               return { type: 'group', children: [...gridGroup, ...faceGroup, ...lineGroup] };
             },
