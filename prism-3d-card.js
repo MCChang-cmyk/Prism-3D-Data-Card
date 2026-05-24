@@ -72,29 +72,19 @@ class Prism3DCardEditor extends LitElement {
   }
 
   _valueChanged(ev) {
-    if (!this._config || !ev.detail.value) return;
-    
+    if (!ev.detail.value) return;
     const nextConfig = { ...ev.detail.value };
     
-    // --- 實體選擇器邏輯修正 ---
     if (nextConfig.entities) {
-      nextConfig.entities = nextConfig.entities
-        .filter(ent => ent !== null && ent !== undefined) // 移除空值
-        .map(ent => {
-          // 如果是字串（新選取的實體），轉換為標準物件
-          if (typeof ent === 'string') {
-            return { entity: ent, name: "", max: 100 };
-          }
-          // 如果已經是物件，確保它包含 entity 屬性並保留原始設定
-          if (typeof ent === 'object' && ent.entity) {
-            return { 
-              ...ent, 
-              name: ent.name || "", 
-              max: ent.max !== undefined ? ent.max : 100 
-            };
-          }
-          return ent;
-        });
+      // 確保存入 config 的永遠是物件陣列格式
+      nextConfig.entities = nextConfig.entities.map(ent => {
+        if (typeof ent === 'string') {
+          // 檢查舊配置中是否已經有這個實體的自訂名稱或 max，有就保留
+          const oldEnt = (this._config.entities || []).find(e => (typeof e === 'object' ? e.entity : e) === ent);
+          return typeof oldEnt === 'object' ? oldEnt : { entity: ent, name: "", max: 100 };
+        }
+        return ent;
+      });
     }
 
     this.dispatchEvent(new CustomEvent("config-changed", { 
@@ -105,6 +95,16 @@ class Prism3DCardEditor extends LitElement {
   }
 
   render() {
+    // 建立一個臨時配置用於編輯器顯示
+    const displayConfig = { ...this._config };
+    
+    // 如果 entities 是物件陣列 [{entity: '...'}], 轉回字串陣列 ['...']
+    if (displayConfig.entities) {
+      displayConfig.entities = displayConfig.entities.map(ent => 
+        typeof ent === 'object' ? ent.entity : ent
+      );
+    }
+
     const formData = { 
       card_height: 350, 
       line_width: 2, 
@@ -113,10 +113,11 @@ class Prism3DCardEditor extends LitElement {
       opacity_variation: 0.02, 
       tilt: 0.4, 
       chart_radius: 65,
-      grid_opacity_1: 0.02, // 預設淺色層
-      grid_opacity_2: 0.05, // 預設深色層
-      ...this._config 
+      grid_opacity_1: 0.02,
+      grid_opacity_2: 0.05,
+      ...displayConfig // 使用處理過的顯示配置
     };
+    
     return html`<ha-form .hass=${this.hass} .data=${formData} .schema=${this._schema()} @value-changed=${this._valueChanged}></ha-form>`;
   }
 }
