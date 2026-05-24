@@ -216,9 +216,20 @@ class Prism3DCard extends HTMLElement {
       this.chart.setOption({
         backgroundColor: 'transparent',
         tooltip: {
-          show: true, trigger: 'item', enterable: false, confine: true, extraCssText: 'pointer-events: none;',
-          backgroundColor: 'rgba(0, 0, 0, 0.85)', borderColor: mainColor, borderWidth: 1,
-          textStyle: { color: '#fff', fontSize: 12 },
+  show: true,
+  trigger: 'item',
+  // --- 關鍵修復：確保 Tooltip 不會攔截滑鼠事件 ---
+  enterable: false,      // 滑鼠不能進入 Tooltip 浮層
+  confine: true,         // 將 Tooltip 限制在畫布範圍內
+  transitionDuration: 0, // 設為 0 讓移動更即時，減少殘影引發的偵測錯誤
+  
+  // 透過 CSS 強制穿透
+  extraCssText: 'pointer-events: none; z-index: 9999; border:none; box-shadow:none;',
+  
+  backgroundColor: 'rgba(0, 0, 0, 0.85)',
+  borderColor: mainColor,
+  borderWidth: 1,
+  textStyle: { color: '#fff', fontSize: 12 },
           formatter: (params) => {
             let html = `<div style="padding: 5px; min-width: 120px;">`;
             indicators.forEach((ind, idx) => {
