@@ -1,6 +1,14 @@
 import "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js";
 
-console.info("%c PRISM-3D-CARD %c v1.4.0 ", "color: white; background: #E13460; font-weight: 700;", "color: #E13460; background: white; font-weight: 700;");
+const CARD_VERSION = "v1.4.0"; // 方便後續統一管理版本
+
+console.info(
+  `%c PRISM-3D-CARD %c ${CARD_VERSION} %c (dist) `,
+  "color: white; background: #E13460; font-weight: 700;",
+  "color: #E13460; background: white; font-weight: 700;",
+  "color: #94a3b8; background: transparent;"
+);
+
 
 // --- 環境相容性修正 ---
 let LitElement = window.LitElement;
