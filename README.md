@@ -36,7 +36,7 @@ Prism 3D Data Card 是一個自定義的 Lovelace 卡片，它能將多個實體
 
 1.  下載 `dist/prism-3d-card.js`。
 2.  將檔案上傳至 Home Assistant 的 `/config/www/` 資料夾。
-3.  在 HA 的「資源」設定中加入：`/local/prism-3d-card.js?v=1.0.0` (類型為 JavaScript Module)。
+3.  在 HA 的「資源」設定中加入：`/local/dist/prism-3d-card.js?v=1.0.0` (類型為 JavaScript Module)。
 
 ## ⚙️ 配置參數
 
