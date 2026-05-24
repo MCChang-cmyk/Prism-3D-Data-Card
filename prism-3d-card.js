@@ -220,28 +220,29 @@ class Prism3DCard extends HTMLElement {
         tooltip: {
           show: true,
           trigger: 'item',
-          // --- 關鍵修復：確保 Tooltip 不會攔截滑鼠事件 ---
-          enterable: false,      // 滑鼠不能進入 Tooltip 浮層
-          confine: true,         // 將 Tooltip 限制在畫布範圍內
-          transitionDuration: 0, // 設為 0 讓移動更即時，減少殘影引發的偵測錯誤
-          
-          // 透過 CSS 強制穿透
-          extraCssText: 'pointer-events: none; z-index: 9999; border:none; box-shadow:none;',
-          
+          enterable: false,
+          confine: true,
+          transitionDuration: 0,
+          // --- 修正 1：位置偏移 ---
+          // 讓 Tooltip 跟隨滑鼠，但保持 20px 的安全距離，避免重疊引發閃爍
+          position: function (pos, params, dom, rect, size) {
+            return [pos[0] + 20, pos[1] + 20];
+          },
+          // --- 修正 2：CSS 強制穿透 ---
+          extraCssText: 'pointer-events: none !important; z-index: 9999; border:none; box-shadow:none;',
           backgroundColor: 'rgba(0, 0, 0, 0.85)',
           borderColor: mainColor,
           borderWidth: 1,
           textStyle: { color: '#fff', fontSize: 12 },
           formatter: (params) => {
-              let html = `<div style="padding: 5px; min-width: 120px;">`;
-              indicators.forEach((ind, idx) => {
-                html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                    <span style="color:#94a3b8; margin-right:15px;">${ind.name}</span>
-                    <b style="color:${mainColor}">${dataValues[idx]}</b>
-                  </div>`;
-              });
-              return html + `</div>`;
-            }
+            // 只顯示單一實體的數值，增加易讀性並減少計算負擔
+            const i = params.dataIndex;
+            if (i === undefined) return '';
+            return `<div style="padding: 5px;">
+                <span style="color:#94a3b8; margin-right:15px;">${indicators[i].name}</span>
+                <b style="color:${mainColor}">${dataValues[i]}</b>
+              </div>`;
+          }
         },
         xAxis: { show: false, min: 0, max: w }, yAxis: { show: false, min: 0, max: h },
         radar: { show: false },
