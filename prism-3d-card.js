@@ -223,7 +223,7 @@ class Prism3DCard extends HTMLElement {
     // 如果有標題，加上上方的 padding，給標題留位置，並增加整體高度
     const baseHeight = this.config.card_height || 350;
     const finalHeight = isTitle ? (baseHeight + 60) : baseHeight;
-    const paddingTop = isTitle ? '70px' : '0px';
+    const paddingTop = isTitle ? '20px' : '0px';
 
     this._mainContainer.style.height = `${finalHeight}px`;
     this._container.style.cssText = `
