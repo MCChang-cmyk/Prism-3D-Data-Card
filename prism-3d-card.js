@@ -1,6 +1,6 @@
 import "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js";
 
-const CARD_VERSION = "v1.5.4"; 
+const CARD_VERSION = "v1.6.0"; 
 
 console.info(
   `%c PRISM-3D-CARD %c ${CARD_VERSION} %c (dist) `,
@@ -31,6 +31,7 @@ class Prism3DCardEditor extends LitElement {
 
   _labelFor(name) {
     const labels = {
+      title: "卡片標題",
       color: "圖表主色",
       mode: "顯示模式",
       chart_radius: "圖表縮放比例",
@@ -53,7 +54,9 @@ class Prism3DCardEditor extends LitElement {
   }
 
   _schema() {
+    // 將 title 移到最上面
     return [
+      { name: "title", selector: { text: {} } },
       { name: "mode", selector: { select: { mode: "dropdown", options: [{ label: "3D 立體", value: "3d" }, { label: "2D 平面", value: "2d" }] } } },
       { name: "chart_radius", selector: { number: { min: 10, max: 100, step: 1, unitOfMeasurement: "%", mode: "slider" } } },
       { name: "entities", selector: { entity: { multiple: true } } },
@@ -122,31 +125,82 @@ class Prism3DCardEditor extends LitElement {
 
 // 2. 主卡片 (Prism3DCard)
 class Prism3DCard extends HTMLElement {
+  constructor() {
+    super();
+    this._hoverIndex = -1;
+  }
+
   static getConfigElement() { return document.createElement("prism-3d-card-editor"); }
-  static getStubConfig() { return { mode: "3d", color: "#E13460", rotation: 0, tilt: 0.4, entities: [] }; }
+  static getStubConfig() { return { mode: "3d", color: "#E13460", rotation: 0, tilt: 0.4, entities: [], title: "數據稜鏡" }; }
 
   set hass(hass) {
     this._hass = hass;
-    if (!this.chart) { this._initChart(); } else { this._updateData(); }
+    if (this.chart) {
+      this._updateData();
+    }
   }
 
   setConfig(config) {
     this.config = config;
-    if (this._container) this._container.style.height = `${config.card_height || 350}px`;
+    if (!this.shadowRoot) {
+      this._initChart();
+    } else {
+      this._updateMainStyle();
+      this._updateTitle();
+      this._updateData();
+    }
   }
 
   _initChart() {
-    if (this.shadowRoot) return;
     const root = this.attachShadow({ mode: 'open' });
+    
+    // 建立最外層容器，設定為相對定位
+    this._mainContainer = document.createElement('div');
+    this._mainContainer.style.cssText = `
+      position: relative;
+      width: 100%;
+      box-sizing: border-box;
+      overflow: hidden;
+    `;
+    
+    // 建立標題容器
+    this._titleElement = document.createElement('div');
+    this._titleElement.className = 'card-header';
+    this._titleElement.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      color: var(--ha-card-header-color, --primary-text-color);
+      font-family: var(--ha-card-header-font-family, inherit);
+      font-size: var(--ha-card-header-font-size, 24px);
+      font-weight: normal;
+      letter-spacing: -0.012em;
+      line-height: 32px;
+      padding: 24px 16px 16px;
+      box-sizing: border-box;
+      text-align: left;
+      z-index: 1; /* 確保標題在圖表上方 */
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    `;
+    this._mainContainer.appendChild(this._titleElement);
+
+    // 建立圖表容器
     this._container = document.createElement('div');
-    this._container.style.cssText = `width: 100%; height: ${this.config.card_height || 350}px;`;
-    root.appendChild(this._container);
+    this._container.className = 'card-content';
+    this._mainContainer.appendChild(this._container);
+    
+    root.appendChild(this._mainContainer);
+
+    this._updateMainStyle();
+    this._updateTitle();
 
     setTimeout(() => {
       this.chart = echarts.init(this._container);
       
       this.chart.on('mouseover', (params) => {
-        // 確保點擊的是數據系列而非背景
         if (params.dataIndex !== undefined && params.dataIndex >= 0 && this._hoverIndex !== params.dataIndex) {
           this._hoverIndex = params.dataIndex;
           this._updateData();
@@ -161,6 +215,33 @@ class Prism3DCard extends HTMLElement {
       this._updateData();
       new ResizeObserver(() => this.chart && this.chart.resize()).observe(this._container);
     }, 100);
+  }
+
+  // 更新外層容器樣式
+  _updateMainStyle() {
+    const isTitle = this.config && this.config.title;
+    // 如果有標題，加上上方的 padding，給標題留位置，並增加整體高度
+    const baseHeight = this.config.card_height || 350;
+    const finalHeight = isTitle ? (baseHeight + 60) : baseHeight;
+    const paddingTop = isTitle ? '70px' : '0px';
+
+    this._mainContainer.style.height = `${finalHeight}px`;
+    this._container.style.cssText = `
+      width: 100%;
+      height: 100%;
+      padding-top: ${paddingTop};
+      box-sizing: border-box;
+    `;
+  }
+
+  // 更新標題文字
+  _updateTitle() {
+    if (this.config && this.config.title) {
+      this._titleElement.innerText = this.config.title;
+      this._titleElement.style.display = 'block';
+    } else {
+      this._titleElement.style.display = 'none';
+    }
   }
 
   _updateData() {
@@ -212,7 +293,8 @@ class Prism3DCard extends HTMLElement {
 
     if (is3D) {
       const count = dataValues.length;
-      const w = this.chart.getWidth(), h = this.chart.getHeight();
+      // 獲取容器的實際繪製高度
+      const w = this.chart.getWidth(), h = this._container.clientHeight;
       const cx = w / 2, cy = h / 2 + 20;
       const radius = (chartRadiusVal / 100) * Math.min(w, h) * 0.6;
 
@@ -223,7 +305,7 @@ class Prism3DCard extends HTMLElement {
           trigger: 'item',
           enterable: false,
           confine: true,
-          appendToBody: false,
+          appendToBody: false, 
           transitionDuration: 0,
           position: function (pos) {
             return [pos[0] + 20, pos[1] + 20];
@@ -267,7 +349,7 @@ class Prism3DCard extends HTMLElement {
                         type: 'line', 
                         shape: { x1: cx, y1: cy, x2: gx, y2: gy }, 
                         style: { stroke: gridColor, opacity: gridLineOp, lineWidth: 1 },
-                        silent: true // 修正：網格不響應滑鼠事件
+                        silent: true 
                       });
                     }
                   }
@@ -276,7 +358,7 @@ class Prism3DCard extends HTMLElement {
                     z: 1, 
                     shape: { points: stepPoints }, 
                     style: { fill: this._hexToRgba(gridColor, s % 2 === 0 ? gOp2 : gOp1), stroke: gridColor, opacity: gridLineOp, lineWidth: 1 },
-                    silent: true // 修正：網格不響應滑鼠事件
+                    silent: true 
                   });
                 }
               }
@@ -341,7 +423,6 @@ class Prism3DCard extends HTMLElement {
         ]
       };
     } else {
-      // 2D 模式保持不變，因為 radar 內建處理正確
       option = {
         backgroundColor: 'transparent',
         tooltip: {
@@ -349,7 +430,9 @@ class Prism3DCard extends HTMLElement {
         },
         xAxis: { show: false }, yAxis: { show: false },
         radar: {
-          indicator: indicators, startAngle: 90 + rotationDeg, shape: 'polygon', radius: `${chartRadiusVal}%`, center: ['50%', '50%'],
+          indicator: indicators, startAngle: 90 + rotationDeg, shape: 'polygon', radius: `${chartRadiusVal}%`, 
+          // 2D 模式也調整中心點，留出上方標題空間
+          center: ['50%', this.config.title ? '60%' : '50%'],
           axisName: { fontSize: textSize, fontWeight: '500', color: textColor, stroke: textStrokeColor, lineWidth: textStrokeWidth },
           splitLine: { lineStyle: { color: this._hexToRgba(gridColor, gridLineOp) } },
           splitArea: { show: true, areaStyle: { color: [this._hexToRgba(gridColor, gOp2), this._hexToRgba(gridColor, gOp1)].reverse() } }
