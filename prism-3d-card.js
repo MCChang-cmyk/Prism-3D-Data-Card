@@ -1,6 +1,6 @@
 import "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js";
 
-const CARD_VERSION = "v1.5.3"; 
+const CARD_VERSION = "v1.5.4"; 
 
 console.info(
   `%c PRISM-3D-CARD %c ${CARD_VERSION} %c (dist) `,
@@ -146,7 +146,8 @@ class Prism3DCard extends HTMLElement {
       this.chart = echarts.init(this._container);
       
       this.chart.on('mouseover', (params) => {
-        if (params.dataIndex !== undefined && this._hoverIndex !== params.dataIndex) {
+        // 確保點擊的是數據系列而非背景
+        if (params.dataIndex !== undefined && params.dataIndex >= 0 && this._hoverIndex !== params.dataIndex) {
           this._hoverIndex = params.dataIndex;
           this._updateData();
         }
@@ -222,7 +223,7 @@ class Prism3DCard extends HTMLElement {
           trigger: 'item',
           enterable: false,
           confine: true,
-          appendToBody: false, // 確保在 Shadow DOM 內
+          appendToBody: false,
           transitionDuration: 0,
           position: function (pos) {
             return [pos[0] + 20, pos[1] + 20];
@@ -262,10 +263,21 @@ class Prism3DCard extends HTMLElement {
                     const gy = cy + Math.sin(angle) * stepR * tilt;
                     stepPoints.push([gx, gy]);
                     if (s === gridSteps) {
-                      gridGroup.push({ type: 'line', shape: { x1: cx, y1: cy, x2: gx, y2: gy }, style: { stroke: gridColor, opacity: gridLineOp, lineWidth: 1 } });
+                      gridGroup.push({ 
+                        type: 'line', 
+                        shape: { x1: cx, y1: cy, x2: gx, y2: gy }, 
+                        style: { stroke: gridColor, opacity: gridLineOp, lineWidth: 1 },
+                        silent: true // 修正：網格不響應滑鼠事件
+                      });
                     }
                   }
-                  gridGroup.push({ type: 'polygon', z: 1, shape: { points: stepPoints }, style: { fill: this._hexToRgba(gridColor, s % 2 === 0 ? gOp2 : gOp1), stroke: gridColor, opacity: gridLineOp, lineWidth: 1 } });
+                  gridGroup.push({ 
+                    type: 'polygon', 
+                    z: 1, 
+                    shape: { points: stepPoints }, 
+                    style: { fill: this._hexToRgba(gridColor, s % 2 === 0 ? gOp2 : gOp1), stroke: gridColor, opacity: gridLineOp, lineWidth: 1 },
+                    silent: true // 修正：網格不響應滑鼠事件
+                  });
                 }
               }
 
@@ -329,6 +341,7 @@ class Prism3DCard extends HTMLElement {
         ]
       };
     } else {
+      // 2D 模式保持不變，因為 radar 內建處理正確
       option = {
         backgroundColor: 'transparent',
         tooltip: {
@@ -352,7 +365,6 @@ class Prism3DCard extends HTMLElement {
       };
     }
 
-    // --- 最終修正：不合併更新 (false) 防止 DOM 重新建立導致閃爍 ---
     this.chart.setOption(option, false);
   }
 
