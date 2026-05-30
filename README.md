@@ -52,6 +52,16 @@ Prism 3D Data Card 是一個自定義的 Lovelace 卡片，它能將多個實體
 | `area_opacity` | number | `0.4` | 數據區域的總透明度。 |
 | `opacity_variation` | number | `0.02` | 3D 明暗差異值，增加立體感。 |
 
+
+
+## 數據模式邏輯：
+
+- 絕對值 (Absolute)：各維度高度 = 數值 / 該維度 max (預設為100)。
+
+- 絕對值比例 (absolute_prop)：先算各維度比例，再將比例最大者設為 100% 高度。適用於所有實體都有不同 max 值，但你想讓圖表看起來最飽滿的情況。
+
+- 相對值比例 (relative_prop)：完全無視 max 設定，直接拿所有實體中數值最大的那個當作 100% 高度。
+
 ## 🛠 開發與測試
 
 本專案附帶一個 `preview.html`，讓開發者可以在不安裝 Home Assistant 的情況下直接預覽效果。
