@@ -1,6 +1,6 @@
 import "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js";
 
-const CARD_VERSION = "v1.8.9"; 
+const CARD_VERSION = "v1.9.0"; 
 
 console.info(
   `%c PRISM-3D-CARD %c ${CARD_VERSION} %c (dist) `,
@@ -29,10 +29,26 @@ class Prism3DCardEditor extends LitElement {
   setConfig(config) { this._config = config; }
   
   _labelFor(name) {
-    const labels = { 
-      title: "卡片標題", data_mode: "數據計算模式", mode: "顯示模式", 
-      chart_radius: "圖表縮放比例", color: "圖表主色", rotation: "旋轉角度", 
-      tilt: "傾斜視角", line_width: "稜線寬度", area_opacity: "區域透明度"
+    const labels = {
+      title: "卡片標題",
+      data_mode: "數據計算模式",
+      color: "圖表主色",
+      mode: "顯示模式",
+      chart_radius: "圖表縮放比例",
+      entities: "選擇實體 (Entities)",
+      rotation: "旋轉角度",
+      tilt: "傾斜視角 (俯視度)",
+      line_width: "稜線寬度 (0為不繪製)",
+      area_opacity: "區域總透明度",
+      text_size: "文字字體大小",
+      text_color: "文字顯示顏色",
+      text_stroke_width: "文字外框粗細",
+      text_stroke_color: "文字外框顏色",
+      opacity_variation: "3D 明暗差異值",
+      grid_color: "網格顏色",
+      grid_line_opacity: "網格線透明度",
+      grid_opacity_1: "背景斑馬紋 - 淺色層",
+      grid_opacity_2: "背景斑馬紋 - 深色層"
     };
     return labels[name] || name;
   }
@@ -50,7 +66,6 @@ class Prism3DCardEditor extends LitElement {
   }
 
   _updateEntity(idx, updates) {
-    // 加上 || [] 防護，避免 parse 錯誤
     const newEntities = JSON.parse(JSON.stringify(this._config.entities || []));
     newEntities[idx] = { ...newEntities[idx], ...updates };
     this._fireConfig({ entities: newEntities });
@@ -91,9 +106,8 @@ class Prism3DCardEditor extends LitElement {
         @value-changed=${this._valueChanged}
       ></ha-form>
 
-      <div style="margin-top: 24px; font-weight: 500; font-size: 14px; color: var(--primary-text-color);">實體列表設定</div>
+      <div style="margin-top: 24px; font-weight: 500; font-size: 14px; color: var(--primary-text-color);">實體清單設定</div>
       <div class="entities-container">
-        
         ${entities.map((ent, idx) => {
           const isExpanded = this._expandedIndex === idx;
           const eid = typeof ent === 'string' ? ent : ent.entity;
@@ -107,7 +121,6 @@ class Prism3DCardEditor extends LitElement {
                 </div>
                 <ha-icon-button class="del-btn" @click=${(e) => { e.stopPropagation(); this._removeEntity(idx); }} .path=${"M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"}></ha-icon-button>
               </div>
-              
               ${isExpanded ? html`
                 <div class="entity-content">
                   <ha-form
@@ -117,7 +130,7 @@ class Prism3DCardEditor extends LitElement {
                       { name: "name", selector: { text: {} } },
                       { name: "max", selector: { number: { mode: "box", step: 0.1 } } }
                     ]}
-                    .computeLabel=${(s) => s.name === 'name' ? '顯示名稱 (覆蓋預設)' : '圖表最高值 (Max)'}
+                    .computeLabel=${(s) => s.name === 'name' ? '顯示名稱' : '量程最大值 (Max)'}
                     @value-changed=${(e) => this._updateEntity(idx, e.detail.value)}
                   ></ha-form>
                 </div>
@@ -125,43 +138,61 @@ class Prism3DCardEditor extends LitElement {
             </div>
           `;
         })}
-        
         <div class="add-entity-box">
           <ha-form
             .hass=${this.hass}
             .data=${{ _new_entity: "" }}
             .schema=${[{ name: "_new_entity", selector: { entity: {} } }]}
-            .computeLabel=${() => "選擇實體加入清單..."}
+            .computeLabel=${() => "選擇實體加入圖表..."}
             @value-changed=${(e) => {
               const newId = e.detail.value && e.detail.value._new_entity;
               if (newId) {
                 const newEntities = [...(this._config.entities || [])];
-                // 防呆：避免重複加入同一個實體
                 if (!newEntities.some(ent => (typeof ent === 'string' ? ent : ent.entity) === newId)) {
                   newEntities.push({ entity: newId, name: "", max: 100 });
                   this._fireConfig({ entities: newEntities });
                 }
-                // 微延遲重置表單值，避免畫面卡住
                 setTimeout(() => { if (e.target) e.target.data = { _new_entity: "" }; }, 50);
               }
             }}
           ></ha-form>
         </div>
-
       </div>
 
       <ha-form
         .hass=${this.hass}
         .data=${this._config}
         .schema=${[
-          { name: "chart_radius", selector: { number: { min: 10, max: 100, step: 1, mode: "slider" } } },
-          { type: "expandable", title: "視覺與視角設定", schema: [
+          { name: "chart_radius", selector: { number: { min: 10, max: 100, step: 1, unitOfMeasurement: "%", mode: "slider" } } },
+          {
+            type: "expandable", title: "視覺與配色",
+            schema: [
               { name: "color", selector: { text: {} } },
-              { name: "rotation", selector: { number: { min: 0, max: 360, step: 1, mode: "slider" } } }, 
-              { name: "tilt", selector: { number: { min: 0.1, max: 0.9, step: 0.05, mode: "slider" } } },
               { name: "line_width", selector: { number: { min: 0, max: 10, step: 1, mode: "slider" } } },
-              { name: "area_opacity", selector: { number: { min: 0.1, max: 1, step: 0.05, mode: "slider" } } }
-          ]}
+              { name: "area_opacity", selector: { number: { min: 0.1, max: 1, step: 0.05, mode: "slider" } } },
+              { name: "text_size", selector: { number: { min: 8, max: 24, step: 1, mode: "slider" } } },
+              { name: "text_color", selector: { text: {} } },
+              { name: "text_stroke_width", selector: { number: { min: 0, max: 10, step: 0.5, mode: "slider" } } },
+              { name: "text_stroke_color", selector: { text: {} } },
+              { name: "opacity_variation", selector: { number: { min: 0, max: 0.2, step: 0.01, mode: "slider" } } },
+            ]
+          },
+          {
+            type: "expandable", title: "視角與角度",
+            schema: [
+              { name: "rotation", selector: { number: { min: 0, max: 360, step: 1, unitOfMeasurement: "°", mode: "slider" } } },
+              { name: "tilt", selector: { number: { min: 0.1, max: 0.9, step: 0.05, mode: "slider" } } },
+            ]
+          },
+          {
+            type: "expandable", title: "背景網格",
+            schema: [
+              { name: "grid_color", selector: { text: {} } },
+              { name: "grid_line_opacity", selector: { number: { min: 0, max: 1, step: 0.05, mode: "slider" } } },
+              { name: "grid_opacity_1", selector: { number: { min: 0, max: 0.2, step: 0.005, mode: "slider" } } },
+              { name: "grid_opacity_2", selector: { number: { min: 0, max: 0.2, step: 0.005, mode: "slider" } } },
+            ]
+          }
         ]}
         .computeLabel=${(s) => this._labelFor(s.name)}
         @value-changed=${this._valueChanged}
@@ -180,12 +211,15 @@ class Prism3DCard extends HTMLElement {
   }
   static getConfigElement() { return document.createElement("prism-3d-card-editor"); }
   static getStubConfig() { return { mode: "3d", data_mode: "absolute", color: "#E13460", rotation: 0, tilt: 0.4, entities: [], title: "數據稜鏡" }; }
+  
   set hass(hass) { this._hass = hass; if (this.chart) this._updateData(); }
+  
   setConfig(config) {
     this.config = config;
     if (!this.shadowRoot) { this._initChart(); } 
     else { this._updateMainStyle(); this._updateTitle(); this._updateData(); }
   }
+
   _initChart() {
     const root = this.attachShadow({ mode: 'open' });
     this._mainContainer = document.createElement('div');
@@ -197,11 +231,13 @@ class Prism3DCard extends HTMLElement {
     this._mainContainer.appendChild(this._container);
     root.appendChild(this._mainContainer);
     this._updateMainStyle(); this._updateTitle();
+
     const onStart = (e) => { if (this.config.mode !== '3d') return; this._isDragging = true; this._startX = e.pageX || e.touches[0].pageX; this._mainContainer.style.cursor = 'grabbing'; };
     const onMove = (e) => { if (!this._isDragging) return; const deltaX = (e.pageX || e.touches[0].pageX) - this._startX; this._dragRotation = Math.max(-90, Math.min(90, deltaX * 0.5)); this._updateData(); };
     const onEnd = () => { if (!this._isDragging) return; this._isDragging = false; this._mainContainer.style.cursor = 'grab'; this._startSpringBack(); };
     this._mainContainer.addEventListener('mousedown', onStart); window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onEnd);
     this._mainContainer.addEventListener('touchstart', onStart, {passive: true}); window.addEventListener('touchmove', onMove, {passive: false}); window.addEventListener('touchend', onEnd);
+
     setTimeout(() => {
       this.chart = echarts.init(this._container);
       this.chart.on('mouseover', (p) => { if (p.dataIndex >= 0 && this._hoverIndex !== p.dataIndex) { this._hoverIndex = p.dataIndex; this._updateData(); } });
@@ -210,23 +246,31 @@ class Prism3DCard extends HTMLElement {
       new ResizeObserver(() => this.chart && this.chart.resize()).observe(this._container);
     }, 100);
   }
+
   _startSpringBack() {
     const step = () => { if (Math.abs(this._dragRotation) < 0.1) { this._dragRotation = 0; this._updateData(); return; } this._dragRotation *= 0.88; this._updateData(); requestAnimationFrame(step); };
     requestAnimationFrame(step);
   }
+
   _updateMainStyle() { const isTitle = this.config && this.config.title; const baseHeight = this.config.card_height || 350; this._mainContainer.style.height = `${isTitle ? baseHeight + 50 : baseHeight}px`; this._container.style.cssText = `width: 100%; height: 100%; padding-top: ${isTitle ? '40px' : '0px'}; box-sizing: border-box;`; }
   _updateTitle() { if (this.config && this.config.title) { this._titleElement.innerText = this.config.title; this._titleElement.style.display = 'block'; } else { this._titleElement.style.display = 'none'; } }
+
   _updateData() {
-    // 防護 1: 確保即使沒有 entities 設定也不會崩潰
     if (!this._hass || !this.chart) return;
-    
     const mainColor = this.config.color || '#E13460';
     const is3D = this.config.mode === '3d';
     const dataMode = this.config.data_mode || 'absolute';
     const rotationRad = ((parseFloat(this.config.rotation || 0) + this._dragRotation) * Math.PI) / 180;
     const tilt = parseFloat(this.config.tilt) || 0.4;
-    
-    // 防護 2: 使用 || [] 保護 .map() 避免 undefined 崩潰
+    const gOp1 = this.config.grid_opacity_1 !== undefined ? parseFloat(this.config.grid_opacity_1) : 0.02;
+    const gOp2 = this.config.grid_opacity_2 !== undefined ? parseFloat(this.config.grid_opacity_2) : 0.05;
+    const gridColor = this.config.grid_color || '#ffffff';
+    const gridLineOp = this.config.grid_line_opacity !== undefined ? parseFloat(this.config.grid_line_opacity) : 0.1;
+    const textSize = parseFloat(this.config.text_size) || 11;
+    const textColor = this.config.text_color || '#94a3b8';
+    const textStrokeWidth = this.config.text_stroke_width !== undefined ? parseFloat(this.config.text_stroke_width) : 2;
+    const textStrokeColor = this.config.text_stroke_color || '#000000';
+
     const entities = (this.config.entities || []).map(ent => typeof ent === 'string' ? { entity: ent, max: 100 } : ent).filter(ent => ent.entity);
     const dataValues = entities.map(ent => parseFloat(this._hass.states[ent.entity]?.state) || 0);
     const indicators = entities.map(ent => ({ name: (ent.name || this._hass.states[ent.entity]?.attributes?.friendly_name || ent.entity.split('.')[1]).toUpperCase(), max: ent.max || 100 }));
@@ -235,6 +279,7 @@ class Prism3DCard extends HTMLElement {
     if (dataMode === 'absolute') visualPercents = dataValues.map((v, i) => v / (indicators[i].max || 100));
     else if (dataMode === 'absolute_prop') { const absRatios = dataValues.map((v, i) => v / (indicators[i].max || 100)); const maxR = Math.max(...absRatios, 0.0001); visualPercents = absRatios.map(r => r / maxR); }
     else if (dataMode === 'relative_prop') { const maxV = Math.max(...dataValues, 0.0001); visualPercents = dataValues.map(v => v / maxV); }
+
     const getP = (vPercent, i, cx, cy, radius, rotationRad, tilt) => { const count = indicators.length; const angle = (Math.PI * 2 / count) * i - Math.PI / 2 + rotationRad; const bx = cx + Math.cos(angle) * radius; const by = cy + (Math.sin(angle) * radius * tilt); return { bx, by, x: bx, y: by - (vPercent * (radius * 0.8)) }; };
     let option = {};
     if (is3D) {
@@ -251,11 +296,11 @@ class Prism3DCard extends HTMLElement {
           const i = params.dataIndex; const pts = visualPercents.map((vp, idx) => getP(vp, idx, cx, cy, radius, rotationRad, tilt));
           const gridGroup = [], faceGroup = [], lineGroup = []; const count = indicators.length;
           if (count === 0) return { type: 'group', children: [] };
-          if (i === 0) { for (let s = 5; s >= 1; s--) { const stepR = radius * (s / 5), stepPts = []; for (let j = 0; j < count; j++) { const angle = (Math.PI * 2 / count) * j - Math.PI / 2 + rotationRad; const gx = cx + Math.cos(angle) * stepR, gy = cy + Math.sin(angle) * stepR * tilt; stepPts.push([gx, gy]); if (s === 5) gridGroup.push({ type: 'line', shape: { x1: cx, y1: cy, x2: gx, y2: gy }, style: { stroke: '#fff', opacity: 0.1 }, silent: true }); }
-          gridGroup.push({ type: 'polygon', z: 1, shape: { points: stepPts }, style: { fill: `rgba(255,255,255,${s%2===0?0.05:0.02})`, stroke: '#fff', opacity: 0.1 }, silent: true }); } }
+          if (i === 0) { for (let s = 5; s >= 1; s--) { const stepR = radius * (s / 5), stepPts = []; for (let j = 0; j < count; j++) { const angle = (Math.PI * 2 / count) * j - Math.PI / 2 + rotationRad; const gx = cx + Math.cos(angle) * stepR, gy = cy + Math.sin(angle) * stepR * tilt; stepPts.push([gx, gy]); if (s === 5) gridGroup.push({ type: 'line', shape: { x1: cx, y1: cy, x2: gx, y2: gy }, style: { stroke: gridColor, opacity: gridLineOp }, silent: true }); }
+          gridGroup.push({ type: 'polygon', z: 1, shape: { points: stepPts }, style: { fill: this._hexToRgba(gridColor, s%2===0?gOp2:gOp1), stroke: gridColor, opacity: gridLineOp }, silent: true }); } }
           const pCurr = pts[i], pPrev = pts[(i - 1 + count) % count], pNext = pts[(i + 1) % count];
           const mLeft = { x: (pPrev.bx + pCurr.bx) / 2, y: (pPrev.by + pCurr.by) / 2 }, mRight = { x: (pCurr.bx + pNext.bx) / 2, y: (pCurr.by + pNext.by) / 2 };
-          const isHovered = (i === this._hoverIndex), opVar = 0.02;
+          const isHovered = (i === this._hoverIndex), opVar = parseFloat(this.config.opacity_variation) || 0.02;
           const areaOp = parseFloat(this.config.area_opacity) || 0.4;
           faceGroup.push({ type: 'polygon', z: 2, shape: { points: [[cx, cy], [mLeft.x, mLeft.y], [pCurr.x, pCurr.y]] }, style: { fill: this._hexToRgba(mainColor, Math.min(1, areaOp + opVar + (isHovered ? 0.3 : 0))) } });
           faceGroup.push({ type: 'polygon', z: 2, shape: { points: [[cx, cy], [pCurr.x, pCurr.y], [mRight.x, mRight.y]] }, style: { fill: this._hexToRgba(mainColor, Math.min(1, areaOp - opVar + (isHovered ? 0.3 : 0))) } });
@@ -264,15 +309,15 @@ class Prism3DCard extends HTMLElement {
           return { type: 'group', children: [...gridGroup, ...faceGroup, ...lineGroup] };
         }, data: dataValues.map(v => v) }, { type: 'custom', z: 10, silent: true, renderItem: (params, api) => {
           const i = params.dataIndex; const pCurr = getP(visualPercents[i], i, cx, cy, radius, rotationRad, tilt); const isHovered = (i === this._hoverIndex);
-          return { type: 'text', z: 10, style: { text: indicators[i].name, x: pCurr.x, y: pCurr.y - 15, fill: isHovered ? '#fff' : '#94a3b8', font: `${isHovered ? 'bold ' : ''}11px sans-serif`, textAlign: 'center', textVerticalAlign: 'bottom', stroke: '#000', lineWidth: 2 } };
+          return { type: 'text', z: 10, style: { text: indicators[i].name, x: pCurr.x, y: pCurr.y - 15, fill: isHovered ? '#fff' : textColor, font: `${isHovered ? 'bold ' : ''}${textSize}px sans-serif`, textAlign: 'center', textVerticalAlign: 'bottom', stroke: textStrokeColor, lineWidth: textStrokeWidth } };
         }, data: dataValues.map(v => v) }]
       };
     } else {
       option = {
         backgroundColor: 'transparent',
         tooltip: { show: true, trigger: 'item', backgroundColor: 'rgba(0, 0, 0, 0.8)', borderColor: 'rgba(255, 255, 255, 0.1)', textStyle: { color: '#fff' } },
-        radar: { indicator: indicators.map(ind => ({ ...ind, max: 1 })), startAngle: 90 + (parseFloat(this.config.rotation) || 0), shape: 'polygon', radius: `${parseFloat(this.config.chart_radius)||65}%`, center: ['50%', this.config.title ? '60%' : '50%'], axisName: { fontSize: 11, color: '#94a3b8', stroke: '#000', lineWidth: 2 }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } }, splitArea: { show: true, areaStyle: { color: ['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.02)'].reverse() } } },
-        series: [{ type: 'radar', data: [{ value: visualPercents, symbol: 'none', lineStyle: { color: mainColor, width: 2 }, areaStyle: { color: this._hexToRgba(mainColor, 0.4) } }] }]
+        radar: { indicator: indicators.map(ind => ({ ...ind, max: 1 })), startAngle: 90 + (parseFloat(this.config.rotation) || 0), shape: 'polygon', radius: `${parseFloat(this.config.chart_radius)||65}%`, center: ['50%', this.config.title ? '60%' : '50%'], axisName: { fontSize: textSize, color: textColor, stroke: textStrokeColor, lineWidth: textStrokeWidth }, splitLine: { lineStyle: { color: this._hexToRgba(gridColor, gridLineOp) } }, splitArea: { show: true, areaStyle: { color: [this._hexToRgba(gridColor, gOp2), this._hexToRgba(gridColor, gOp1)].reverse() } } },
+        series: [{ type: 'radar', data: [{ value: visualPercents, symbol: 'none', lineStyle: { color: mainColor, width: parseFloat(this.config.line_width)||2 }, areaStyle: { color: this._hexToRgba(mainColor, parseFloat(this.config.area_opacity)||0.4) } }] }]
       };
     }
     this.chart.setOption(option, false);
@@ -286,10 +331,5 @@ class Prism3DCard extends HTMLElement {
   }
 }
 
-// 核心修正：避免熱重載時重複註冊引發崩潰
-if (!customElements.get("prism-3d-card-editor")) {
-  customElements.define("prism-3d-card-editor", Prism3DCardEditor);
-}
-if (!customElements.get("prism-3d-card")) {
-  customElements.define("prism-3d-card", Prism3DCard);
-}
+if (!customElements.get("prism-3d-card-editor")) { customElements.define("prism-3d-card-editor", Prism3DCardEditor); }
+if (!customElements.get("prism-3d-card")) { customElements.define("prism-3d-card", Prism3DCard); }
