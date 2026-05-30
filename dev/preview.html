@@ -1,59 +1,182 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-TW">
 <head>
+    <meta charset="UTF-8">
+    <title>Prism 3D Card - 終極修復工作台</title>
     <style>
-        body { background-color: #0f172a; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-        #card-container { 
-            width: 600px; 
-            height: 600px; 
-            border: 2px solid #1e293b; 
-            background: #020617;
-            position: relative;
-        }
+        :root { --bg-color: #0f172a; --panel-bg: #1e293b; --text-color: #f8fafc; --accent-color: #E13460; }
+        body { background-color: var(--bg-color); color: var(--text-color); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; display: flex; height: 100vh; overflow: hidden; }
+        #preview-section { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; border-right: 2px solid #334155; padding: 20px; background: #020617; position: relative; }
+        /* 確保寬高絕對固定 */
+        #card-container { width: 550px; height: 550px; background: #000; border: 1px solid #334155; border-radius: 12px; overflow: hidden; }
+        #config-section { width: 480px; background: var(--panel-bg); padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; box-shadow: -5px 0 20px rgba(0,0,0,0.3); }
+        h2 { margin-top: 0; font-size: 1.1rem; color: var(--accent-color); border-bottom: 1px solid #334155; padding-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+        .config-group { background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; margin-bottom: 10px; }
+        .row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+        .row label { width: 110px; font-size: 0.85rem; color: #94a3b8; }
+        .row select, .row input[type="text"] { flex: 1; background: #0f172a; border: 1px solid #475569; color: white; padding: 8px; border-radius: 4px; outline: none; }
+        input[type="range"] { flex: 1; accent-color: var(--accent-color); cursor: pointer; }
+        .entity-row { display: grid; grid-template-columns: 1.4fr 1fr 50px 50px 35px; gap: 6px; margin-bottom: 8px; align-items: center; }
+        .entity-row input { background: #0f172a; border: 1px solid #334155; color: white; padding: 6px; border-radius: 3px; font-size: 0.75rem; width: 100%; box-sizing: border-box; }
+        button { background: var(--accent-color); color: white; border: none; padding: 12px; border-radius: 6px; cursor: pointer; font-weight: bold; width: 100%; transition: transform 0.1s; }
+        button:active { transform: scale(0.98); }
+        button.delete-btn { background: #ef4444; width: 30px; height: 30px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 4px; }
     </style>
 </head>
 <body>
-    <div id="card-container"></div>
-    
-    <script type="module" src="../prism-3d-card.js"></script>
 
+    <div id="preview-section">
+        <div id="card-container"></div>
+        <p style="color: #475569; font-size: 0.8rem; margin-top: 20px;">提示：按住並左右拖曳圖表可動態旋轉</p>
+    </div>
+
+    <div id="config-section">
+        <h2>卡片標題與模式</h2>
+        <div class="config-group">
+            <div class="row"><label>標題名稱</label><input type="text" id="cfg-title" value="實時數據監控"></div>
+            <div class="row"><label>顯示樣式</label>
+                <select id="cfg-mode">
+                    <option value="3d">3D 立體投影</option>
+                    <option value="2d">2D 平面雷達</option>
+                </select>
+            </div>
+            <div class="row"><label>數據邏輯</label>
+                <select id="cfg-data-mode">
+                    <option value="absolute">絕對值 (各自 Max)</option>
+                    <option value="absolute_prop">絕對值比例 (自動撐滿)</option>
+                    <option value="relative_prop">相對值比例 (數值對比)</option>
+                </select>
+            </div>
+        </div>
+
+        <h2>視覺參數調節</h2>
+        <div class="config-group" id="visual-params">
+            </div>
+
+        <h2>實體數據模擬器</h2>
+        <div class="config-group">
+            <div class="entity-row" style="font-size: 0.65rem; color: #64748b; font-weight: bold; margin-bottom: 10px;">
+                <div>ENTITY ID</div><div>DISPLAY NAME</div><div>VAL</div><div>MAX</div><div></div>
+            </div>
+            <div id="entity-list"></div>
+            <button id="add-entity-btn" style="margin-top: 15px;">+ 新增測試實體</button>
+        </div>
+    </div>
+    
     <script type="module">
-customElements.whenDefined('prism-3d-card').then(() => {
-    const container = document.getElementById('card-container');
-    const card = document.createElement('prism-3d-card');
-    
-    // 在這裡測試不同的屬性！
-    card.setConfig({
-        card_height: 500,      // 改為 card_height，且不加 "px"
-        mode: "3d",           
-        color: "#E13460",     
-        chart_radius: 85,   
-        rotation: 45,   // 旋轉
-        tilt: 0.45, // 傾斜
-        area_opacity: 0.5,
-        opacity_variation: 0,
-        entities: [
-            { entity: 's1', name: '九層塔', max: 100 },
-            { entity: 's2', name: '龜背芋', max: 100 },
-            { entity: 's3', name: '鹿角蕨', max: 100 },
-            { entity: 's4', name: '濕度', max: 100 },
-            { entity: 's5', name: '光照', max: 100 }
-        ]
-    });
-    
-    // 模擬數據
-    card.hass = {
-        states: {
-            's1': { state: '10' },
-            's2': { state: '10' },
-            's3': { state: '0' },
-            's4': { state: '100' },
-            's5': { state: '50' }
+        // 必須在 script 內 import 或是確保路徑正確
+        import "../prism-3d-card.js"; 
+
+        let config = {
+            title: "實時數據監控", card_height: 450, mode: "3d", data_mode: "absolute", color: "#E13460",
+            chart_radius: 80, rotation: 0, tilt: 0.4, line_width: 2, area_opacity: 0.4,
+            opacity_variation: 0.02, drag_direction: "normal",
+            entities: [
+                { entity: 'sensor.power', name: '功耗', max: 500, _mock_val: 320 },
+                { entity: 'sensor.temp', name: '溫度', max: 100, _mock_val: 65 }
+            ]
+        };
+
+        let card = null;
+
+        // --- 初始化核心 ---
+        async function initWorkspace() {
+            await customElements.whenDefined('prism-3d-card');
+            const container = document.getElementById('card-container');
+            card = document.createElement('prism-3d-card');
+            container.appendChild(card);
+
+            // 綁定頂部控件
+            document.getElementById('cfg-title').oninput = (e) => { config.title = e.target.value; sync(); };
+            document.getElementById('cfg-mode').onchange = (e) => { config.mode = e.target.value; sync(); };
+            document.getElementById('cfg-data-mode').onchange = (e) => { config.data_mode = e.target.value; sync(); };
+            
+            // 綁定增加實體按鈕
+            const addBtn = document.getElementById('add-entity-btn');
+            addBtn.addEventListener('click', () => {
+                const newId = `sensor.mock_${Math.floor(Math.random()*1000)}`;
+                config.entities.push({ entity: newId, name: '測試點', max: 100, _mock_val: 50 });
+                renderEntityList();
+                sync();
+            });
+
+            renderSliders();
+            renderEntityList();
+            sync();
         }
-    };
-    
-    container.appendChild(card);
-});
+
+        // 生成滑桿
+        function renderSliders() {
+            const params = [
+                { id: 'chart_radius', label: '圖表縮放', min: 10, max: 100, step: 1 },
+                { id: 'rotation', label: '基礎旋轉', min: 0, max: 360, step: 1 },
+                { id: 'tilt', label: '垂直傾斜', min: 0.1, max: 0.9, step: 0.05 },
+                { id: 'line_width', label: '線條寬度', min: 0, max: 10, step: 1 },
+                { id: 'area_opacity', label: '透明深度', min: 0.1, max: 1, step: 0.05 }
+            ];
+            const target = document.getElementById('visual-params');
+            target.innerHTML = '';
+            params.forEach(p => {
+                const div = document.createElement('div');
+                div.className = 'row';
+                div.innerHTML = `<label>${p.label}</label><input type="range" min="${p.min}" max="${p.max}" step="${p.step}" value="${config[p.id]}">`;
+                div.querySelector('input').oninput = (e) => {
+                    config[p.id] = parseFloat(e.target.value);
+                    sync();
+                };
+                target.appendChild(div);
+            });
+        }
+
+        // 生成實體列表
+        function renderEntityList() {
+            const listContainer = document.getElementById('entity-list');
+            listContainer.innerHTML = '';
+            config.entities.forEach((ent, idx) => {
+                const row = document.createElement('div');
+                row.className = 'entity-row';
+                row.innerHTML = `
+                    <input type="text" value="${ent.entity}" class="in-id">
+                    <input type="text" value="${ent.name}" class="in-name">
+                    <input type="number" value="${ent._mock_val}" class="in-val">
+                    <input type="number" value="${ent.max}" class="in-max">
+                    <button class="delete-btn">×</button>
+                `;
+                
+                // 直接綁定監聽
+                row.querySelector('.in-id').oninput = (e) => { config.entities[idx].entity = e.target.value; sync(); };
+                row.querySelector('.in-name').oninput = (e) => { config.entities[idx].name = e.target.value; sync(); };
+                row.querySelector('.in-val').oninput = (e) => { config.entities[idx]._mock_val = parseFloat(e.target.value) || 0; sync(); };
+                row.querySelector('.in-max').oninput = (e) => { config.entities[idx].max = parseFloat(e.target.value) || 1; sync(); };
+                row.querySelector('.delete-btn').onclick = () => {
+                    config.entities.splice(idx, 1);
+                    renderEntityList();
+                    sync();
+                };
+                
+                listContainer.appendChild(row);
+            });
+        }
+
+        // 同步到圖表組件
+        function sync() {
+            if (!card) return;
+            // 傳遞 Config 深拷貝
+            card.setConfig(JSON.parse(JSON.stringify(config)));
+            
+            // 構造模擬 Hass
+            const mockStates = {};
+            config.entities.forEach(ent => {
+                mockStates[ent.entity] = {
+                    state: ent._mock_val.toString(),
+                    attributes: { friendly_name: ent.name }
+                };
+            });
+            card.hass = { states: mockStates };
+        }
+
+        // 啟動
+        initWorkspace();
     </script>
 </body>
 </html>
