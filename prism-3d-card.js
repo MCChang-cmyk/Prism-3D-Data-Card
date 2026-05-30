@@ -1,6 +1,6 @@
 import "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js";
 
-const CARD_VERSION = "v1.8.1"; 
+const CARD_VERSION = "v1.8.2"; 
 
 console.info(
   `%c PRISM-3D-CARD %c ${CARD_VERSION} %c (dist) `,
@@ -63,14 +63,29 @@ class Prism3DCardEditor extends LitElement {
   _valueChanged(ev) {
     if (!ev.detail.value) return;
     const nextConfig = { ...ev.detail.value };
+    
+    // --- 核心修正：正確處理實體選擇器回傳的數據 ---
     if (nextConfig.entities) {
-      nextConfig.entities = nextConfig.entities.map(ent => typeof ent === 'string' ? { entity: ent, name: "", max: 100 } : ent);
+      nextConfig.entities = nextConfig.entities.map(ent => {
+        // 如果是字串（新選取的實體），包裝成物件
+        if (typeof ent === 'string') {
+          return { entity: ent, name: "", max: 100 };
+        }
+        // 如果已經是物件（原本就有的設定），直接保留
+        return ent;
+      });
     }
+
     this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: nextConfig }, bubbles: true, composed: true }));
   }
 
   render() {
-    const formData = { card_height: 350, data_mode: "absolute", drag_direction: "normal", line_width: 2, area_opacity: 0.4, rotation: 0, opacity_variation: 0.02, tilt: 0.4, chart_radius: 65, text_size: 11, text_color: "#94a3b8", text_stroke_width: 2, text_stroke_color: "#000000", ...this._config };
+    const displayConfig = { ...this._config };
+    // 渲染表單前，將物件陣列轉回 entity_id 陣列給 ha-form 顯示
+    if (displayConfig.entities) {
+      displayConfig.entities = displayConfig.entities.map(ent => typeof ent === 'object' ? ent.entity : ent);
+    }
+    const formData = { card_height: 350, data_mode: "absolute", drag_direction: "normal", line_width: 2, area_opacity: 0.4, rotation: 0, opacity_variation: 0.02, tilt: 0.4, chart_radius: 65, text_size: 11, text_color: "#94a3b8", text_stroke_width: 2, text_stroke_color: "#000000", ...displayConfig };
     return html`<ha-form .hass=${this.hass} .data=${formData} .schema=${this._schema()} .computeLabel=${(s) => this._labelFor(s.name)} @value-changed=${this._valueChanged}></ha-form>`;
   }
 }
