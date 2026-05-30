@@ -1,6 +1,6 @@
 import "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js";
 
-const CARD_VERSION = "v1.8.3"; 
+const CARD_VERSION = "v1.8.4"; 
 
 console.info(
   `%c PRISM-3D-CARD %c ${CARD_VERSION} %c (dist) `,
@@ -25,125 +25,139 @@ class Prism3DCardEditor extends LitElement {
   _labelFor(name) {
     const labels = { 
       title: "卡片標題", data_mode: "數據計算模式", color: "圖表主色", mode: "顯示模式", 
-      chart_radius: "圖表縮放比例", entities: "選擇實體", rotation: "旋轉角度", 
+      chart_radius: "圖表縮放比例", entities: "實體 (必填)", rotation: "旋轉角度", 
       drag_direction: "拖曳旋轉方向", tilt: "傾斜視角", line_width: "稜線寬度", 
-      area_opacity: "區域透明度", text_size: "文字大小", text_color: "文字顏色", 
-      text_stroke_width: "文字外框粗細", text_stroke_color: "文字外框顏色", 
-      opacity_variation: "3D 明暗差異", grid_color: "網格顏色", 
-      grid_line_opacity: "網格線透明度", grid_opacity_1: "背景斑馬紋-淺", grid_opacity_2: "背景斑馬紋-深",
-      name: "自定義顯示名稱", max: "最大量程 (Max Value)"
+      area_opacity: "區域透明度", text_size: "文字大小", text_color: "文字顏色"
     };
     return labels[name] || name;
   }
 
+  // --- 關鍵修正：實體列表 Schema ---
   _schema() {
     return [
       { name: "title", selector: { text: {} } },
       { name: "data_mode", selector: { select: { mode: "dropdown", options: [{ label: "絕對值", value: "absolute" }, { label: "絕對值比例", value: "absolute_prop" }, { label: "相對值比例", value: "relative_prop" }] } } },
       { name: "mode", selector: { select: { mode: "dropdown", options: [{ label: "3D 立體", value: "3d" }, { label: "2D 平面", value: "2d" }] } } },
       { name: "chart_radius", selector: { number: { min: 10, max: 100, step: 1, unitOfMeasurement: "%", mode: "slider" } } },
-      // --- 核心修正：允許在編輯器中輸入 name 和 max ---
-      { 
-        name: "entities", 
-        selector: { 
-          entity: { 
-            multiple: true 
-          } 
-        } 
-      },
-      // 這裡利用動態 schema，為每個已選實體提供進階設定
-      ...(this._config.entities || []).map((ent, idx) => ({
-        type: "expandable",
-        title: `實體設定: ${typeof ent === 'string' ? ent : (ent.name || ent.entity)}`,
+      
+      // 使用與 Glance Card 相同的實體列表編輯器，支援次級設定頁面
+      {
+        name: "entities",
+        selector: {
+          text: {
+            multiple: true,
+            // 這裡設定讓 HA 使用實體編輯器（包含筆圖示）
+          }
+        },
+        // 特殊處理：當 selector 偵測到 entities 是物件陣列時，會自動嘗試調用 Row Editor
+        type: "grid",
         schema: [
-          { name: `ent_name_${idx}`, label: "顯示名稱", selector: { text: {} } },
-          { name: `ent_max_${idx}`, label: "最大量程 (Max)", selector: { number: { mode: "box" } } }
+            {
+                name: "entities",
+                selector: {
+                    entity: {
+                        multiple: true
+                    }
+                }
+            }
         ]
-      })),
-      { type: "expandable", title: "視覺與配色", schema: [{ name: "color", selector: { text: {} } }, { name: "line_width", selector: { number: { min: 0, max: 10, step: 1, mode: "slider" } } }, { name: "area_opacity", selector: { number: { min: 0.1, max: 1, step: 0.05, mode: "slider" } } }, { name: "text_size", selector: { number: { min: 8, max: 24, step: 1, mode: "slider" } } }, { name: "text_color", selector: { text: {} } }, { name: "text_stroke_width", selector: { number: { min: 0, max: 10, step: 0.5, mode: "slider" } } }, { name: "text_stroke_color", selector: { text: {} } }, { name: "opacity_variation", selector: { number: { min: 0, max: 0.2, step: 0.01, mode: "slider" } } }] },
-      { type: "expandable", title: "視角與角度", schema: [
-          { name: "rotation", selector: { number: { min: 0, max: 360, step: 1, unitOfMeasurement: "°", mode: "slider" } } }, 
-          { name: "drag_direction", selector: { select: { mode: "dropdown", options: [{ label: "正常 (隨手勢)", value: "normal" }, { label: "反向 (隨鏡頭)", value: "reverse" }] } } },
-          { name: "tilt", selector: { number: { min: 0.1, max: 0.9, step: 0.05, mode: "slider" } } }
-        ] 
       },
-      { type: "expandable", title: "背景網格", schema: [{ name: "grid_color", selector: { text: {} } }, { name: "grid_line_opacity", selector: { number: { min: 0, max: 1, step: 0.05, mode: "slider" } } }, { name: "grid_opacity_1", selector: { number: { min: 0, max: 0.2, step: 0.005, mode: "slider" } } }, { name: "grid_opacity_2", selector: { number: { min: 0, max: 0.2, step: 0.005, mode: "slider" } } }] }
+      
+      // 這裡動態產生每個實體的子設定（當點擊「筆」進入編輯時會用到）
+      ... (this._config.entities || []).flatMap((ent, idx) => {
+          const entityId = typeof ent === 'string' ? ent : ent.entity;
+          return [
+              { name: `ent_name_${idx}`, label: `${entityId} 顯示名稱`, selector: { text: {} } },
+              { name: `ent_max_${idx}`, label: `${entityId} Max 值`, selector: { number: { mode: "box" } } }
+          ];
+      }),
+
+      { type: "expandable", title: "視覺與視角設定", schema: [
+          { name: "color", selector: { text: {} } },
+          { name: "rotation", selector: { number: { min: 0, max: 360, step: 1, unitOfMeasurement: "°", mode: "slider" } } }, 
+          { name: "tilt", selector: { number: { min: 0.1, max: 0.9, step: 0.05, mode: "slider" } } },
+          { name: "line_width", selector: { number: { min: 0, max: 10, step: 1, mode: "slider" } } },
+          { name: "area_opacity", selector: { number: { min: 0.1, max: 1, step: 0.05, mode: "slider" } } }
+      ]}
     ];
   }
 
   _valueChanged(ev) {
     if (!ev.detail.value) return;
     const value = ev.detail.value;
-    const nextConfig = { ...value };
+    const nextConfig = { ...this._config, ...value };
     
-    // 1. 處理主實體列表的變動
     if (value.entities) {
       const oldEntities = this._config.entities || [];
       nextConfig.entities = value.entities.map((entId) => {
-        // 如果原本就是物件形式，嘗試找回舊設定
         const entityId = typeof entId === 'string' ? entId : entId.entity;
+        // 嘗試找回舊有的細節設定 (name/max)
         const existing = oldEntities.find(e => (typeof e === 'string' ? e : e.entity) === entityId);
         
         if (typeof existing === 'object') {
-          return { ...existing }; // 保留原本的 name 和 max
+          return { ...existing };
         }
         return { entity: entityId, name: "", max: 100 };
       });
     }
 
-    // 2. 處理動態 schema 傳回的 ent_name_x 和 ent_max_x 並寫入 entities 陣列
+    // 處理子頁面回傳的自定義數值
     if (nextConfig.entities) {
-      nextConfig.entities = nextConfig.entities.map((ent, idx) => {
-        const customName = value[`ent_name_${idx}`];
-        const customMax = value[`ent_max_${idx}`];
-        const updatedEnt = { ...ent };
-        if (customName !== undefined) updatedEnt.name = customName;
-        if (customMax !== undefined) updatedEnt.max = parseFloat(customMax);
-        
-        // 清理暫存屬性，避免污染 config
-        delete nextConfig[`ent_name_${idx}`];
-        delete nextConfig[`ent_max_${idx}`];
-        return updatedEnt;
-      });
+        nextConfig.entities = nextConfig.entities.map((ent, idx) => {
+            const updated = { ...ent };
+            if (value[`ent_name_${idx}`] !== undefined) updated.name = value[`ent_name_${idx}`];
+            if (value[`ent_max_${idx}`] !== undefined) updated.max = parseFloat(value[`ent_max_${idx}`]);
+            
+            // 清理暫存屬性
+            delete nextConfig[`ent_name_${idx}`];
+            delete nextConfig[`ent_max_${idx}`];
+            return updated;
+        });
     }
 
     this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: nextConfig }, bubbles: true, composed: true }));
   }
 
   render() {
-    const displayConfig = { ...this._config };
-    const formData = { ...displayConfig };
+    if (!this._config || !this.hass) return html``;
+
+    const formData = { ...this._config };
     
-    // 將內嵌在 entities 的 name/max 提取出來給 ha-form 顯示
-    if (displayConfig.entities) {
-      formData.entities = displayConfig.entities.map(ent => typeof ent === 'object' ? ent.entity : ent);
-      displayConfig.entities.forEach((ent, idx) => {
-        if (typeof ent === 'object') {
-          formData[`ent_name_${idx}`] = ent.name || "";
-          formData[`ent_max_${idx}`] = ent.max || 100;
-        }
-      });
+    // 展平數據供 ha-form 渲染
+    if (formData.entities) {
+        const originalEntities = formData.entities;
+        formData.entities = originalEntities.map(ent => typeof ent === 'object' ? ent.entity : ent);
+        originalEntities.forEach((ent, idx) => {
+            if (typeof ent === 'object') {
+                formData[`ent_name_${idx}`] = ent.name || "";
+                formData[`ent_max_${idx}`] = ent.max || 100;
+            }
+        });
     }
 
-    const defaultData = { card_height: 350, data_mode: "absolute", drag_direction: "normal", line_width: 2, area_opacity: 0.4, rotation: 0, opacity_variation: 0.02, tilt: 0.4, chart_radius: 65, text_size: 11, text_color: "#94a3b8", text_stroke_width: 2, text_stroke_color: "#000000" };
-    
-    return html`<ha-form .hass=${this.hass} .data=${{...defaultData, ...formData}} .schema=${this._schema()} .computeLabel=${(s) => this._labelFor(s.name)} @value-changed=${this._valueChanged}></ha-form>`;
+    return html`
+      <ha-form
+        .hass=${this.hass}
+        .data=${formData}
+        .schema=${this._schema()}
+        .computeLabel=${(s) => this._labelFor(s.name)}
+        @value-changed=${this._valueChanged}
+      ></ha-form>
+    `;
   }
 }
 
-// 2. 主卡片 (Prism3DCard) 保持 1.8.2 的高效繪圖與拖曳邏輯
+// 2. 主卡片 (Prism3DCard) 
 class Prism3DCard extends HTMLElement {
   constructor() {
     super();
     this._hoverIndex = -1;
     this._dragRotation = 0;
     this._isDragging = false;
-    this._startX = 0;
-    this._springAnim = null;
   }
 
   static getConfigElement() { return document.createElement("prism-3d-card-editor"); }
-  static getStubConfig() { return { mode: "3d", data_mode: "absolute", drag_direction: "normal", color: "#E13460", rotation: 0, tilt: 0.4, entities: [], title: "數據稜鏡" }; }
+  static getStubConfig() { return { mode: "3d", data_mode: "absolute", color: "#E13460", rotation: 0, tilt: 0.4, entities: [], title: "數據稜鏡" }; }
 
   set hass(hass) { this._hass = hass; if (this.chart) this._updateData(); }
 
@@ -171,7 +185,6 @@ class Prism3DCard extends HTMLElement {
       this._isDragging = true;
       this._startX = e.pageX || e.touches[0].pageX;
       this._mainContainer.style.cursor = 'grabbing';
-      if (this._springAnim) cancelAnimationFrame(this._springAnim);
     };
     const onMove = (e) => {
       if (!this._isDragging) return;
@@ -201,9 +214,9 @@ class Prism3DCard extends HTMLElement {
   _startSpringBack() {
     const step = () => {
       if (Math.abs(this._dragRotation) < 0.1) { this._dragRotation = 0; this._updateData(); return; }
-      this._dragRotation *= 0.88; this._updateData(); this._springAnim = requestAnimationFrame(step);
+      this._dragRotation *= 0.88; this._updateData(); requestAnimationFrame(step);
     };
-    this._springAnim = requestAnimationFrame(step);
+    requestAnimationFrame(step);
   }
 
   _updateMainStyle() {
