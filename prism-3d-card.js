@@ -1,6 +1,6 @@
 import "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js";
 
-const CARD_VERSION = "v1.8.5"; 
+const CARD_VERSION = "v1.8.6"; 
 
 console.info(
   `%c PRISM-3D-CARD %c ${CARD_VERSION} %c (dist) `,
@@ -16,7 +16,6 @@ if (!LitElement) {
   else { LitElement = class extends HTMLElement { set hass(hass) { this._hass = hass; } setConfig(config) { this._config = config; } }; }
 }
 const html = LitElement.prototype.html || ((strings, ...values) => strings[0]);
-const css = LitElement.prototype.css || i$3; // 兼容環境的樣式定義
 
 // 1. 編輯器 (Prism3DCardEditor)
 class Prism3DCardEditor extends LitElement {
@@ -24,126 +23,125 @@ class Prism3DCardEditor extends LitElement {
   
   constructor() {
     super();
-    this._expandedIndex = -1; // 預設全部摺疊
+    this._expandedIndex = -1;
   }
 
-  setConfig(config) { this._config = { ...config }; }
+  setConfig(config) { this._config = config; }
   
   _labelFor(name) {
     const labels = { 
-      title: "卡片標題", data_mode: "數據計算模式", color: "圖表主色", mode: "顯示模式", 
-      chart_radius: "圖表縮放比例", entities: "實體選擇", rotation: "旋轉角度", 
-      drag_direction: "拖曳旋轉方向", tilt: "傾斜視角", line_width: "稜線寬度", 
-      area_opacity: "區域透明度"
+      title: "卡片標題", data_mode: "數據計算模式", mode: "顯示模式", 
+      chart_radius: "圖表縮放比例", color: "圖表主色", rotation: "旋轉角度", 
+      tilt: "傾斜視角", line_width: "稜線寬度", area_opacity: "區域透明度"
     };
     return labels[name] || name;
   }
 
-  _schema() {
-    return [
-      { name: "title", selector: { text: {} } },
-      { name: "data_mode", selector: { select: { mode: "dropdown", options: [{ label: "絕對值", value: "absolute" }, { label: "絕對值比例", value: "absolute_prop" }, { label: "相對值比例", value: "relative_prop" }] } } },
-      { name: "mode", selector: { select: { mode: "dropdown", options: [{ label: "3D 立體", value: "3d" }, { label: "2D 平面", value: "2d" }] } } },
-      { name: "chart_radius", selector: { number: { min: 10, max: 100, step: 1, unitOfMeasurement: "%", mode: "slider" } } },
-      { name: "entities", selector: { entity: { multiple: true } } }
-    ];
-  }
-
   _valueChanged(ev) {
     if (!ev.detail.value) return;
-    const value = ev.detail.value;
-    const nextConfig = { ...this._config, ...value };
-    
-    // 保留舊有的自定義設定 (name/max)
-    if (value.entities) {
-      const oldEntities = this._config.entities || [];
-      nextConfig.entities = value.entities.map((entId) => {
-        const entityId = typeof entId === 'string' ? entId : entId.entity;
-        const existing = oldEntities.find(e => (typeof e === 'string' ? e : e.entity) === entityId);
-        return typeof existing === 'object' ? { ...existing, entity: entityId } : { entity: entityId, name: "", max: 100 };
-      });
-    }
-
-    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: nextConfig }, bubbles: true, composed: true }));
+    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { ...this._config, ...ev.detail.value } }, bubbles: true, composed: true }));
   }
 
-  _updateEntityDetail(idx, key, val) {
-    const nextConfig = JSON.parse(JSON.stringify(this._config));
-    if (key === 'max') nextConfig.entities[idx][key] = parseFloat(val) || 0;
-    else nextConfig.entities[idx][key] = val;
-    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: nextConfig }, bubbles: true, composed: true }));
+  _addEntity(ev) {
+    const entityId = ev.detail.value;
+    if (!entityId) return;
+    const newEntities = [...(this._config.entities || [])];
+    newEntities.push({ entity: entityId, name: "", max: 100 });
+    this._fireConfig({ entities: newEntities });
+  }
+
+  _removeEntity(idx) {
+    const newEntities = [...(this._config.entities || [])];
+    newEntities.splice(idx, 1);
+    this._fireConfig({ entities: newEntities });
+  }
+
+  _updateEntity(idx, updates) {
+    const newEntities = JSON.parse(JSON.stringify(this._config.entities));
+    newEntities[idx] = { ...newEntities[idx], ...updates };
+    this._fireConfig({ entities: newEntities });
+  }
+
+  _fireConfig(updates) {
+    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { ...this._config, ...updates } }, bubbles: true, composed: true }));
   }
 
   render() {
     if (!this._config || !this.hass) return html``;
-
     const entities = this._config.entities || [];
 
     return html`
       <style>
-        .entity-editor-container { border: 1px solid var(--divider-color); border-radius: 8px; margin-top: 10px; overflow: hidden; background: var(--card-background-color); }
-        .entity-header { display: flex; align-items: center; padding: 12px; cursor: pointer; background: var(--secondary-background-color); border-bottom: 1px solid var(--divider-color); }
-        .entity-header:hover { background: var(--primary-background-color); }
-        .entity-header ha-icon { margin-right: 10px; color: var(--secondary-text-color); }
-        .entity-header .title { flex: 1; font-size: 14px; font-weight: 500; }
-        .entity-header .id { font-size: 12px; color: var(--secondary-text-color); margin-right: 10px; }
-        .entity-content { padding: 16px; display: flex; flex-direction: column; gap: 12px; background: var(--card-background-color); border-bottom: 1px solid var(--divider-color); }
+        .entities-container { border: 1px solid var(--divider-color); border-radius: 8px; margin: 16px 0; overflow: hidden; background: var(--secondary-background-color); }
+        .entity-row { border-bottom: 1px solid var(--divider-color); background: var(--card-background-color); }
+        .entity-header { display: flex; align-items: center; padding: 10px 12px; cursor: pointer; min-height: 48px; }
+        .entity-header:hover { background: var(--secondary-background-color); }
+        .entity-info { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+        .entity-title { font-size: 14px; font-weight: 500; }
+        .entity-id { font-size: 11px; color: var(--secondary-text-color); }
+        .entity-content { padding: 16px; background: var(--secondary-background-color); display: flex; flex-direction: column; gap: 12px; }
         .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .add-entity-box { padding: 12px; background: var(--secondary-background-color); border-top: 1px solid var(--divider-color); }
+        ha-icon-button { --mdc-icon-button-size: 36px; }
+        .del-btn { color: var(--error-color); }
       </style>
 
       <ha-form
         .hass=${this.hass}
         .data=${this._config}
-        .schema=${this._schema()}
+        .schema=${[
+          { name: "title", selector: { text: {} } },
+          { name: "data_mode", selector: { select: { mode: "dropdown", options: [{ label: "絕對值", value: "absolute" }, { label: "絕對值比例", value: "absolute_prop" }, { label: "相對值比例", value: "relative_prop" }] } } },
+          { name: "mode", selector: { select: { mode: "dropdown", options: [{ label: "3D 立體", value: "3d" }, { label: "2D 平面", value: "2d" }] } } }
+        ]}
         .computeLabel=${(s) => this._labelFor(s.name)}
         @value-changed=${this._valueChanged}
       ></ha-form>
 
-      <div style="margin-top: 20px; font-weight: bold; font-size: 14px; color: var(--secondary-text-color);">實體細節設定</div>
-      <div class="entity-editor-container">
+      <div style="margin-top: 20px; font-weight: bold; font-size: 14px; color: var(--primary-text-color);">實體列表設定 (可展開)</div>
+      <div class="entities-container">
         ${entities.map((ent, idx) => {
-          const entityId = typeof ent === 'string' ? ent : ent.entity;
           const isExpanded = this._expandedIndex === idx;
+          const eid = typeof ent === 'string' ? ent : ent.entity;
           return html`
-            <div class="entity-item">
+            <div class="entity-row">
               <div class="entity-header" @click=${() => this._expandedIndex = isExpanded ? -1 : idx}>
-                <ha-icon icon="${isExpanded ? 'mdi:chevron-down' : 'mdi:chevron-right'}"></ha-icon>
-                <div class="title">${ent.name || this.hass.states[entityId]?.attributes?.friendly_name || entityId}</div>
-                <div class="id">${entityId}</div>
+                <ha-icon icon="${isExpanded ? 'mdi:chevron-down' : 'mdi:chevron-right'}" style="margin-right:8px;"></ha-icon>
+                <div class="entity-info">
+                  <div class="entity-title">${ent.name || this.hass.states[eid]?.attributes?.friendly_name || eid}</div>
+                  <div class="entity-id">${eid}</div>
+                </div>
+                <ha-icon-button class="del-btn" @click=${(e) => { e.stopPropagation(); this._removeEntity(idx); }} .path=${"M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"}></ha-icon-button>
               </div>
               ${isExpanded ? html`
                 <div class="entity-content">
                   <div class="field-row">
-                    <ha-textfield 
-                      label="顯示名稱" 
-                      .value="${ent.name || ''}" 
-                      @input=${(e) => this._updateEntityDetail(idx, 'name', e.target.value)}>
-                    </ha-textfield>
-                    <ha-textfield 
-                      label="量程最大值 (Max)" 
-                      type="number" 
-                      .value="${ent.max || 100}" 
-                      @input=${(e) => this._updateEntityDetail(idx, 'max', e.target.value)}>
-                    </ha-textfield>
+                    <ha-textfield label="顯示名稱" .value=${ent.name || ""} @input=${e => this._updateEntity(idx, {name: e.target.value})}></ha-textfield>
+                    <ha-textfield label="Max 值" type="number" .value=${ent.max || 100} @input=${e => this._updateEntity(idx, {max: parseFloat(e.target.value)||1})}></ha-textfield>
                   </div>
                 </div>
-              ` : ''}
+              ` : ""}
             </div>
           `;
         })}
+        <div class="add-entity-box">
+          <ha-entity-picker .hass=${this.hass} label="新增實體到清單" @value-changed=${this._addEntity}></ha-entity-picker>
+        </div>
       </div>
 
       <ha-form
-        style="margin-top: 20px;"
         .hass=${this.hass}
         .data=${this._config}
-        .schema=${[{ type: "expandable", title: "視覺與視角設定", schema: [
-            { name: "color", selector: { text: {} } },
-            { name: "rotation", selector: { number: { min: 0, max: 360, step: 1, unitOfMeasurement: "°", mode: "slider" } } }, 
-            { name: "tilt", selector: { number: { min: 0.1, max: 0.9, step: 0.05, mode: "slider" } } },
-            { name: "line_width", selector: { number: { min: 0, max: 10, step: 1, mode: "slider" } } },
-            { name: "area_opacity", selector: { number: { min: 0.1, max: 1, step: 0.05, mode: "slider" } } }
-        ]}]}
+        .schema=${[
+          { name: "chart_radius", selector: { number: { min: 10, max: 100, step: 1, mode: "slider" } } },
+          { type: "expandable", title: "視覺與視角設定", schema: [
+              { name: "color", selector: { text: {} } },
+              { name: "rotation", selector: { number: { min: 0, max: 360, step: 1, mode: "slider" } } }, 
+              { name: "tilt", selector: { number: { min: 0.1, max: 0.9, step: 0.05, mode: "slider" } } },
+              { name: "line_width", selector: { number: { min: 0, max: 10, step: 1, mode: "slider" } } },
+              { name: "area_opacity", selector: { number: { min: 0.1, max: 1, step: 0.05, mode: "slider" } } }
+          ]}
+        ]}
         .computeLabel=${(s) => this._labelFor(s.name)}
         @value-changed=${this._valueChanged}
       ></ha-form>
@@ -151,7 +149,7 @@ class Prism3DCardEditor extends LitElement {
   }
 }
 
-// 2. 主卡片 (Prism3DCard)
+// 2. 主卡片 (Prism3DCard) 
 class Prism3DCard extends HTMLElement {
   constructor() {
     super();
@@ -202,7 +200,6 @@ class Prism3DCard extends HTMLElement {
     const mainColor = this.config.color || '#E13460';
     const is3D = this.config.mode === '3d';
     const dataMode = this.config.data_mode || 'absolute';
-    const chartRadiusVal = parseFloat(this.config.chart_radius) || 65;
     const rotationRad = ((parseFloat(this.config.rotation || 0) + this._dragRotation) * Math.PI) / 180;
     const tilt = parseFloat(this.config.tilt) || 0.4;
     const entities = this.config.entities.map(ent => typeof ent === 'string' ? { entity: ent, max: 100 } : ent).filter(ent => ent.entity);
@@ -217,7 +214,7 @@ class Prism3DCard extends HTMLElement {
     if (is3D) {
       const w = this.chart.getWidth(), h = this._container.clientHeight;
       const cx = w / 2, cy = h / 2 + 20;
-      const radius = (chartRadiusVal / 100) * Math.min(w, h) * 0.6;
+      const radius = (parseFloat(this.config.chart_radius) || 65) / 100 * Math.min(w, h) * 0.6;
       option = {
         backgroundColor: 'transparent',
         tooltip: { show: !this._isDragging, trigger: 'item', enterable: false, confine: true, appendToBody: false, transitionDuration: 0, position: (pos) => [pos[0] + 20, pos[1] + 20], extraCssText: 'pointer-events: none !important; z-index: 9999; border:none !important; box-shadow:none !important;', backgroundColor: 'rgba(0, 0, 0, 0.85)', borderColor: mainColor, borderWidth: 1, textStyle: { color: '#fff', fontSize: 12 },
@@ -227,25 +224,27 @@ class Prism3DCard extends HTMLElement {
         series: [{ type: 'custom', renderItem: (params, api) => {
           const i = params.dataIndex; const pts = visualPercents.map((vp, idx) => getP(vp, idx, cx, cy, radius, rotationRad, tilt));
           const gridGroup = [], faceGroup = [], lineGroup = []; const count = indicators.length;
-          if (i === 0) { for (let s = 5; s >= 1; s--) { const stepR = radius * (s / 5), stepPts = []; for (let j = 0; j < count; j++) { const angle = (Math.PI * 2 / count) * j - Math.PI / 2 + rotationRad; const gx = cx + Math.cos(angle) * stepR, gy = cy + Math.sin(angle) * stepR * tilt; stepPts.push([gx, gy]); if (s === 5) gridGroup.push({ type: 'line', shape: { x1: cx, y1: cy, x2: gx, y2: gy }, style: { stroke: this.config.grid_color || '#fff', opacity: this.config.grid_line_opacity || 0.1 }, silent: true }); }
-          gridGroup.push({ type: 'polygon', z: 1, shape: { points: stepPts }, style: { fill: this._hexToRgba(this.config.grid_color || '#fff', s % 2 === 0 ? (this.config.grid_opacity_2 || 0.05) : (this.config.grid_opacity_1 || 0.02)), stroke: this.config.grid_color || '#fff', opacity: this.config.grid_line_opacity || 0.1 }, silent: true }); } }
+          if (i === 0) { for (let s = 5; s >= 1; s--) { const stepR = radius * (s / 5), stepPts = []; for (let j = 0; j < count; j++) { const angle = (Math.PI * 2 / count) * j - Math.PI / 2 + rotationRad; const gx = cx + Math.cos(angle) * stepR, gy = cy + Math.sin(angle) * stepR * tilt; stepPts.push([gx, gy]); if (s === 5) gridGroup.push({ type: 'line', shape: { x1: cx, y1: cy, x2: gx, y2: gy }, style: { stroke: '#fff', opacity: 0.1 }, silent: true }); }
+          gridGroup.push({ type: 'polygon', z: 1, shape: { points: stepPts }, style: { fill: `rgba(255,255,255,${s%2===0?0.05:0.02})`, stroke: '#fff', opacity: 0.1 }, silent: true }); } }
           const pCurr = pts[i], pPrev = pts[(i - 1 + count) % count], pNext = pts[(i + 1) % count];
           const mLeft = { x: (pPrev.bx + pCurr.bx) / 2, y: (pPrev.by + pCurr.by) / 2 }, mRight = { x: (pCurr.bx + pNext.bx) / 2, y: (pCurr.by + pNext.by) / 2 };
-          const isHovered = (i === this._hoverIndex), opVar = parseFloat(this.config.opacity_variation) || 0.02;
-          faceGroup.push({ type: 'polygon', z: 2, shape: { points: [[cx, cy], [mLeft.x, mLeft.y], [pCurr.x, pCurr.y]] }, style: { fill: this._hexToRgba(mainColor, Math.min(1, (parseFloat(this.config.area_opacity) || 0.4) + opVar + (isHovered ? 0.3 : 0))) } });
-          faceGroup.push({ type: 'polygon', z: 2, shape: { points: [[cx, cy], [pCurr.x, pCurr.y], [mRight.x, mRight.y]] }, style: { fill: this._hexToRgba(mainColor, Math.min(1, (parseFloat(this.config.area_opacity) || 0.4) - opVar + (isHovered ? 0.3 : 0))) } });
-          if ((parseFloat(this.config.line_width) || 0) > 0) { lineGroup.push({ type: 'polyline', z: 3, shape: { points: [[mLeft.x, mLeft.y], [pCurr.x, pCurr.y], [mRight.x, mRight.y]] }, style: { stroke: mainColor, fill: 'none', lineWidth: parseFloat(this.config.line_width), lineJoin: 'round' } }); lineGroup.push({ type: 'line', z: 1, shape: { x1: pCurr.bx, y1: pCurr.by, x2: pCurr.x, y2: pCurr.y }, style: { stroke: mainColor, lineDash: [2, 3], lineWidth: 1, opacity: isHovered ? 0.8 : 0.3 } }); }
+          const isHovered = (i === this._hoverIndex), opVar = 0.02;
+          const areaOp = parseFloat(this.config.area_opacity) || 0.4;
+          faceGroup.push({ type: 'polygon', z: 2, shape: { points: [[cx, cy], [mLeft.x, mLeft.y], [pCurr.x, pCurr.y]] }, style: { fill: this._hexToRgba(mainColor, Math.min(1, areaOp + opVar + (isHovered ? 0.3 : 0))) } });
+          faceGroup.push({ type: 'polygon', z: 2, shape: { points: [[cx, cy], [pCurr.x, pCurr.y], [mRight.x, mRight.y]] }, style: { fill: this._hexToRgba(mainColor, Math.min(1, areaOp - opVar + (isHovered ? 0.3 : 0))) } });
+          const lw = parseFloat(this.config.line_width) || 0;
+          if (lw > 0) { lineGroup.push({ type: 'polyline', z: 3, shape: { points: [[mLeft.x, mLeft.y], [pCurr.x, pCurr.y], [mRight.x, mRight.y]] }, style: { stroke: mainColor, fill: 'none', lineWidth: lw, lineJoin: 'round' } }); lineGroup.push({ type: 'line', z: 1, shape: { x1: pCurr.bx, y1: pCurr.by, x2: pCurr.x, y2: pCurr.y }, style: { stroke: mainColor, lineDash: [2, 3], lineWidth: 1, opacity: isHovered ? 0.8 : 0.3 } }); }
           return { type: 'group', children: [...gridGroup, ...faceGroup, ...lineGroup] };
         }, data: dataValues.map(v => v) }, { type: 'custom', z: 10, silent: true, renderItem: (params, api) => {
           const i = params.dataIndex; const pCurr = getP(visualPercents[i], i, cx, cy, radius, rotationRad, tilt); const isHovered = (i === this._hoverIndex);
-          return { type: 'text', z: 10, style: { text: indicators[i].name, x: pCurr.x, y: pCurr.y - ((this.config.text_size || 11) + 5), fill: isHovered ? '#fff' : (this.config.text_color || '#94a3b8'), font: `${isHovered ? 'bold ' : ''}${this.config.text_size || 11}px sans-serif`, textAlign: 'center', textVerticalAlign: 'bottom', stroke: this.config.text_stroke_color || '#000', lineWidth: this.config.text_stroke_width || 2 } };
+          return { type: 'text', z: 10, style: { text: indicators[i].name, x: pCurr.x, y: pCurr.y - 15, fill: isHovered ? '#fff' : '#94a3b8', font: `${isHovered ? 'bold ' : ''}11px sans-serif`, textAlign: 'center', textVerticalAlign: 'bottom', stroke: '#000', lineWidth: 2 } };
         }, data: dataValues.map(v => v) }]
       };
     } else {
       option = {
         backgroundColor: 'transparent',
         tooltip: { show: true, trigger: 'item', backgroundColor: 'rgba(0, 0, 0, 0.8)', borderColor: 'rgba(255, 255, 255, 0.1)', textStyle: { color: '#fff' } },
-        radar: { indicator: indicators.map(ind => ({ ...ind, max: 1 })), startAngle: 90 + (parseFloat(this.config.rotation) || 0), shape: 'polygon', radius: `${chartRadiusVal}%`, center: ['50%', this.config.title ? '60%' : '50%'], axisName: { fontSize: this.config.text_size || 11, color: this.config.text_color || '#94a3b8', stroke: this.config.text_stroke_color || '#000', lineWidth: this.config.text_stroke_width || 2 }, splitLine: { lineStyle: { color: this._hexToRgba(this.config.grid_color || '#fff', 0.1) } }, splitArea: { show: true, areaStyle: { color: [this._hexToRgba('#fff', 0.05), this._hexToRgba('#fff', 0.02)].reverse() } } },
+        radar: { indicator: indicators.map(ind => ({ ...ind, max: 1 })), startAngle: 90 + (parseFloat(this.config.rotation) || 0), shape: 'polygon', radius: `${parseFloat(this.config.chart_radius)||65}%`, center: ['50%', this.config.title ? '60%' : '50%'], axisName: { fontSize: 11, color: '#94a3b8', stroke: '#000', lineWidth: 2 }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } }, splitArea: { show: true, areaStyle: { color: ['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.02)'].reverse() } } },
         series: [{ type: 'radar', data: [{ value: visualPercents, symbol: 'none', lineStyle: { color: mainColor, width: 2 }, areaStyle: { color: this._hexToRgba(mainColor, 0.4) } }] }]
       };
     }
