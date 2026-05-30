@@ -1,6 +1,6 @@
 import "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js";
 
-const CARD_VERSION = "v1.9.0"; 
+const CARD_VERSION = "v1.9.1"; 
 
 console.info(
   `%c PRISM-3D-CARD %c ${CARD_VERSION} %c (dist) `,
@@ -37,6 +37,7 @@ class Prism3DCardEditor extends LitElement {
       chart_radius: "圖表縮放比例",
       entities: "選擇實體 (Entities)",
       rotation: "旋轉角度",
+      drag_direction: "拖曳旋轉方向", // 已加回標籤
       tilt: "傾斜視角 (俯視度)",
       line_width: "稜線寬度 (0為不繪製)",
       area_opacity: "區域總透明度",
@@ -56,6 +57,16 @@ class Prism3DCardEditor extends LitElement {
   _valueChanged(ev) {
     if (!ev.detail.value) return;
     this._fireConfig({ ...this._config, ...ev.detail.value });
+  }
+
+  _addEntity(ev) {
+    const entityId = ev.detail.value;
+    if (!entityId) return;
+    const newEntities = [...(this._config.entities || [])];
+    if (!newEntities.some(ent => (typeof ent === 'string' ? ent : ent.entity) === entityId)) {
+      newEntities.push({ entity: entityId, name: "", max: 100 });
+      this._fireConfig({ entities: newEntities });
+    }
   }
 
   _removeEntity(idx) {
@@ -85,11 +96,10 @@ class Prism3DCardEditor extends LitElement {
         .entity-row { border-bottom: 1px solid var(--divider-color); background: var(--card-background-color); }
         .entity-header { display: flex; align-items: center; padding: 10px 12px; cursor: pointer; min-height: 48px; }
         .entity-header:hover { background: var(--secondary-background-color); }
-        .entity-info { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+        .entity-info { flex: 1; display: flex; flex-direction: column; }
         .entity-title { font-size: 14px; font-weight: 500; color: var(--primary-text-color); }
         .entity-id { font-size: 11px; color: var(--secondary-text-color); }
         .entity-content { padding: 16px; background: var(--secondary-background-color); border-top: 1px solid var(--divider-color); }
-        .add-entity-box { padding: 16px; background: var(--secondary-background-color); border-top: 1px solid var(--divider-color); }
         ha-icon-button { --mdc-icon-button-size: 36px; color: var(--secondary-text-color); }
         .del-btn { color: var(--error-color); }
       </style>
@@ -130,7 +140,7 @@ class Prism3DCardEditor extends LitElement {
                       { name: "name", selector: { text: {} } },
                       { name: "max", selector: { number: { mode: "box", step: 0.1 } } }
                     ]}
-                    .computeLabel=${(s) => s.name === 'name' ? '顯示名稱' : '量程最大值 (Max)'}
+                    .computeLabel=${(s) => s.name === 'name' ? '顯示名稱' : '最大量程 (Max)'}
                     @value-changed=${(e) => this._updateEntity(idx, e.detail.value)}
                   ></ha-form>
                 </div>
@@ -138,23 +148,13 @@ class Prism3DCardEditor extends LitElement {
             </div>
           `;
         })}
-        <div class="add-entity-box">
+        <div style="padding: 16px; background: var(--secondary-background-color); border-top: 1px solid var(--divider-color);">
           <ha-form
             .hass=${this.hass}
             .data=${{ _new_entity: "" }}
             .schema=${[{ name: "_new_entity", selector: { entity: {} } }]}
             .computeLabel=${() => "選擇實體加入圖表..."}
-            @value-changed=${(e) => {
-              const newId = e.detail.value && e.detail.value._new_entity;
-              if (newId) {
-                const newEntities = [...(this._config.entities || [])];
-                if (!newEntities.some(ent => (typeof ent === 'string' ? ent : ent.entity) === newId)) {
-                  newEntities.push({ entity: newId, name: "", max: 100 });
-                  this._fireConfig({ entities: newEntities });
-                }
-                setTimeout(() => { if (e.target) e.target.data = { _new_entity: "" }; }, 50);
-              }
-            }}
+            @value-changed=${this._addEntity}
           ></ha-form>
         </div>
       </div>
@@ -181,6 +181,8 @@ class Prism3DCardEditor extends LitElement {
             type: "expandable", title: "視角與角度",
             schema: [
               { name: "rotation", selector: { number: { min: 0, max: 360, step: 1, unitOfMeasurement: "°", mode: "slider" } } },
+              // --- 修正：加回拖曳旋轉方向選單 ---
+              { name: "drag_direction", selector: { select: { mode: "dropdown", options: [{ label: "正常 (隨手勢)", value: "normal" }, { label: "反向 (隨鏡頭)", value: "reverse" }] } } },
               { name: "tilt", selector: { number: { min: 0.1, max: 0.9, step: 0.05, mode: "slider" } } },
             ]
           },
@@ -210,7 +212,7 @@ class Prism3DCard extends HTMLElement {
     this._isDragging = false;
   }
   static getConfigElement() { return document.createElement("prism-3d-card-editor"); }
-  static getStubConfig() { return { mode: "3d", data_mode: "absolute", color: "#E13460", rotation: 0, tilt: 0.4, entities: [], title: "數據稜鏡" }; }
+  static getStubConfig() { return { mode: "3d", data_mode: "absolute", drag_direction: "normal", color: "#E13460", rotation: 0, tilt: 0.4, entities: [], title: "數據稜鏡" }; }
   
   set hass(hass) { this._hass = hass; if (this.chart) this._updateData(); }
   
@@ -232,8 +234,21 @@ class Prism3DCard extends HTMLElement {
     root.appendChild(this._mainContainer);
     this._updateMainStyle(); this._updateTitle();
 
-    const onStart = (e) => { if (this.config.mode !== '3d') return; this._isDragging = true; this._startX = e.pageX || e.touches[0].pageX; this._mainContainer.style.cursor = 'grabbing'; };
-    const onMove = (e) => { if (!this._isDragging) return; const deltaX = (e.pageX || e.touches[0].pageX) - this._startX; this._dragRotation = Math.max(-90, Math.min(90, deltaX * 0.5)); this._updateData(); };
+    const onStart = (e) => {
+      if (this.config.mode !== '3d') return;
+      this._isDragging = true;
+      this._startX = e.pageX || (e.touches && e.touches[0].pageX);
+      this._mainContainer.style.cursor = 'grabbing';
+    };
+    const onMove = (e) => {
+      if (!this._isDragging) return;
+      const x = e.pageX || (e.touches && e.touches[0].pageX);
+      const deltaX = x - this._startX;
+      // --- 修正：套用 drag_direction 設定 ---
+      const multiplier = (this.config.drag_direction === 'reverse' ? -0.5 : 0.5);
+      this._dragRotation = Math.max(-90, Math.min(90, deltaX * multiplier));
+      this._updateData();
+    };
     const onEnd = () => { if (!this._isDragging) return; this._isDragging = false; this._mainContainer.style.cursor = 'grab'; this._startSpringBack(); };
     this._mainContainer.addEventListener('mousedown', onStart); window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onEnd);
     this._mainContainer.addEventListener('touchstart', onStart, {passive: true}); window.addEventListener('touchmove', onMove, {passive: false}); window.addEventListener('touchend', onEnd);
