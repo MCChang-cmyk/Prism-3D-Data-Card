@@ -1,6 +1,6 @@
 import "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js";
 
-const CARD_VERSION = "v1.8.6"; 
+const CARD_VERSION = "v1.8.7"; 
 
 console.info(
   `%c PRISM-3D-CARD %c ${CARD_VERSION} %c (dist) `,
@@ -39,7 +39,7 @@ class Prism3DCardEditor extends LitElement {
 
   _valueChanged(ev) {
     if (!ev.detail.value) return;
-    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: { ...this._config, ...ev.detail.value } }, bubbles: true, composed: true }));
+    this._fireConfig({ ...this._config, ...ev.detail.value });
   }
 
   _addEntity(ev) {
@@ -48,12 +48,15 @@ class Prism3DCardEditor extends LitElement {
     const newEntities = [...(this._config.entities || [])];
     newEntities.push({ entity: entityId, name: "", max: 100 });
     this._fireConfig({ entities: newEntities });
+    // 清空選擇器文字 (透過重新渲染)
+    ev.target.value = "";
   }
 
   _removeEntity(idx) {
     const newEntities = [...(this._config.entities || [])];
     newEntities.splice(idx, 1);
     this._fireConfig({ entities: newEntities });
+    if (this._expandedIndex === idx) this._expandedIndex = -1;
   }
 
   _updateEntity(idx, updates) {
@@ -72,17 +75,18 @@ class Prism3DCardEditor extends LitElement {
 
     return html`
       <style>
-        .entities-container { border: 1px solid var(--divider-color); border-radius: 8px; margin: 16px 0; overflow: hidden; background: var(--secondary-background-color); }
+        .entities-section { margin: 20px 0; border: 1px solid var(--divider-color); border-radius: 8px; overflow: hidden; background: var(--secondary-background-color); }
+        .section-title { padding: 12px; font-weight: bold; font-size: 14px; color: var(--secondary-text-color); border-bottom: 1px solid var(--divider-color); }
         .entity-row { border-bottom: 1px solid var(--divider-color); background: var(--card-background-color); }
         .entity-header { display: flex; align-items: center; padding: 10px 12px; cursor: pointer; min-height: 48px; }
         .entity-header:hover { background: var(--secondary-background-color); }
-        .entity-info { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+        .entity-info { flex: 1; display: flex; flex-direction: column; }
         .entity-title { font-size: 14px; font-weight: 500; }
         .entity-id { font-size: 11px; color: var(--secondary-text-color); }
-        .entity-content { padding: 16px; background: var(--secondary-background-color); display: flex; flex-direction: column; gap: 12px; }
-        .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-        .add-entity-box { padding: 12px; background: var(--secondary-background-color); border-top: 1px solid var(--divider-color); }
-        ha-icon-button { --mdc-icon-button-size: 36px; }
+        .entity-content { padding: 16px; background: var(--secondary-background-color); display: flex; flex-direction: column; gap: 16px; border-top: 1px solid var(--divider-color); }
+        .field-group { display: flex; gap: 12px; }
+        .field-group ha-textfield { flex: 1; }
+        .add-entity-box { padding: 12px; background: var(--card-background-color); }
         .del-btn { color: var(--error-color); }
       </style>
 
@@ -98,26 +102,36 @@ class Prism3DCardEditor extends LitElement {
         @value-changed=${this._valueChanged}
       ></ha-form>
 
-      <div style="margin-top: 20px; font-weight: bold; font-size: 14px; color: var(--primary-text-color);">實體列表設定 (可展開)</div>
-      <div class="entities-container">
+      <div class="entities-section">
+        <div class="section-title">實體清單設定 (展開編輯細節)</div>
         ${entities.map((ent, idx) => {
           const isExpanded = this._expandedIndex === idx;
           const eid = typeof ent === 'string' ? ent : ent.entity;
+          const friendlyName = this.hass.states[eid]?.attributes?.friendly_name || eid;
           return html`
             <div class="entity-row">
               <div class="entity-header" @click=${() => this._expandedIndex = isExpanded ? -1 : idx}>
-                <ha-icon icon="${isExpanded ? 'mdi:chevron-down' : 'mdi:chevron-right'}" style="margin-right:8px;"></ha-icon>
+                <ha-icon icon="${isExpanded ? 'mdi:chevron-down' : 'mdi:chevron-right'}" style="margin-right:12px;"></ha-icon>
                 <div class="entity-info">
-                  <div class="entity-title">${ent.name || this.hass.states[eid]?.attributes?.friendly_name || eid}</div>
+                  <div class="entity-title">${ent.name || friendlyName}</div>
                   <div class="entity-id">${eid}</div>
                 </div>
                 <ha-icon-button class="del-btn" @click=${(e) => { e.stopPropagation(); this._removeEntity(idx); }} .path=${"M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"}></ha-icon-button>
               </div>
               ${isExpanded ? html`
                 <div class="entity-content">
-                  <div class="field-row">
-                    <ha-textfield label="顯示名稱" .value=${ent.name || ""} @input=${e => this._updateEntity(idx, {name: e.target.value})}></ha-textfield>
-                    <ha-textfield label="Max 值" type="number" .value=${ent.max || 100} @input=${e => this._updateEntity(idx, {max: parseFloat(e.target.value)||1})}></ha-textfield>
+                  <div class="field-group">
+                    <ha-textfield 
+                      label="顯示名稱" 
+                      .value=${ent.name || ""} 
+                      @input=${e => this._updateEntity(idx, {name: e.target.value})}>
+                    </ha-textfield>
+                    <ha-textfield 
+                      label="最大值 (Max)" 
+                      type="number" 
+                      .value=${ent.max || 100} 
+                      @input=${e => this._updateEntity(idx, {max: parseFloat(e.target.value)||1})}>
+                    </ha-textfield>
                   </div>
                 </div>
               ` : ""}
@@ -125,7 +139,11 @@ class Prism3DCardEditor extends LitElement {
           `;
         })}
         <div class="add-entity-box">
-          <ha-entity-picker .hass=${this.hass} label="新增實體到清單" @value-changed=${this._addEntity}></ha-entity-picker>
+          <ha-entity-picker 
+            .hass=${this.hass} 
+            label="選擇實體以新增..." 
+            @value-changed=${this._addEntity}>
+          </ha-entity-picker>
         </div>
       </div>
 
@@ -149,7 +167,7 @@ class Prism3DCardEditor extends LitElement {
   }
 }
 
-// 2. 主卡片 (Prism3DCard) 
+// 2. 主卡片 (Prism3DCard) - 保持原本繪圖與互動邏輯
 class Prism3DCard extends HTMLElement {
   constructor() {
     super();
@@ -237,7 +255,7 @@ class Prism3DCard extends HTMLElement {
           return { type: 'group', children: [...gridGroup, ...faceGroup, ...lineGroup] };
         }, data: dataValues.map(v => v) }, { type: 'custom', z: 10, silent: true, renderItem: (params, api) => {
           const i = params.dataIndex; const pCurr = getP(visualPercents[i], i, cx, cy, radius, rotationRad, tilt); const isHovered = (i === this._hoverIndex);
-          return { type: 'text', z: 10, style: { text: indicators[i].name, x: pCurr.x, y: pCurr.y - 15, fill: isHovered ? '#fff' : '#94a3b8', font: `${isHovered ? 'bold ' : ''}11px sans-serif`, textAlign: 'center', textVerticalAlign: 'bottom', stroke: '#000', lineWidth: 2 } };
+          return { type: 'text', z: 10, style: { text: indicators[i].name, x: pCurr.x, y: pCurr.y - 15, fill: isHovered ? '#fff' : '#94a3b8', font: `${isExpanded && isHovered ? 'bold ' : ''}11px sans-serif`, textAlign: 'center', textVerticalAlign: 'bottom', stroke: '#000', lineWidth: 2 } };
         }, data: dataValues.map(v => v) }]
       };
     } else {
