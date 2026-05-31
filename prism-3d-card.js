@@ -137,7 +137,7 @@ class Prism3DCard extends HTMLElement {
     this._mainContainer.style.cssText = `position: relative; width: 100%; display: flex; flex-direction: column; overflow: hidden; cursor: grab;`;
     
     this._titleElement = document.createElement('div');
-    this._titleElement.style.cssText = `color: var(--ha-card-header-color, --primary-text-color); font-size: var(--ha-card-header-font-size, 24px); padding: 16px 16px 8px; flex-shrink: 0; box-sizing: border-box; text-align: left;`;
+    this._titleElement.style.cssText = `color: var(--ha-card-header-color, --primary-text-color); font-size: var(--ha-card-header-font-size, 16px); padding: 16px 16px 8px; flex-shrink: 0; box-sizing: border-box; text-align: left;`;
     this._mainContainer.appendChild(this._titleElement);
 
     this._container = document.createElement('div');
