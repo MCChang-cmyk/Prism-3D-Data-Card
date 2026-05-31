@@ -1,6 +1,6 @@
 import "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js";
 
-const CARD_VERSION = "v1.9.5"; 
+const CARD_VERSION = "v1.9.6"; 
 
 console.info(
   `%c PRISM-3D-CARD %c ${CARD_VERSION} %c (dist) `,
@@ -17,6 +17,7 @@ if (!LitElement) {
 }
 const html = LitElement.prototype.html || ((strings, ...values) => strings[0]);
 
+// 1. 編輯器 (Prism3DCardEditor)
 class Prism3DCardEditor extends LitElement {
   static get properties() { return { hass: {}, _config: { state: true }, _expandedIndex: { state: true } }; }
   constructor() { super(); this._expandedIndex = -1; }
@@ -158,7 +159,8 @@ class Prism3DCardEditor extends LitElement {
             schema: [
               { name: "rotation", selector: { number: { min: 0, max: 360, step: 1, unitOfMeasurement: "°", mode: "slider" } } },
               { name: "drag_direction", selector: { select: { mode: "dropdown", options: [{ label: "正常 (隨手勢)", value: "normal" }, { label: "反向 (隨鏡頭)", value: "reverse" }] } } },
-              { name: "tilt", selector: { number: { min: 0.1, max: 0.9, step: 0.05, mode: "slider" } } },
+              // --- 核心修正：將 Tilt 最小值改為 0 ---
+              { name: "tilt", selector: { number: { min: 0, max: 0.9, step: 0.05, mode: "slider" } } }, 
             ]
           },
           {
@@ -178,6 +180,7 @@ class Prism3DCardEditor extends LitElement {
   }
 }
 
+// 2. 主卡片 (Prism3DCard)
 class Prism3DCard extends HTMLElement {
   constructor() { super(); this._hoverIndex = -1; this._dragRotation = 0; this._isDragging = false; }
   static getConfigElement() { return document.createElement("prism-3d-card-editor"); }
@@ -222,26 +225,24 @@ class Prism3DCard extends HTMLElement {
     const mainColor = this.config.color || '#E13460';
     const is3D = this.config.mode === '3d';
     const dataMode = this.config.data_mode || 'absolute';
-    const globalDecimals = this.config.decimal_places !== undefined ? this.config.decimal_places : 1;
-    const maxHeightRatio = this.config.max_height_ratio !== undefined ? parseFloat(this.config.max_height_ratio) : 0.8;
     const rotationRad = ((parseFloat(this.config.rotation || 0) + this._dragRotation) * Math.PI) / 180;
-    const tilt = parseFloat(this.config.tilt) || 0.4;
+    
+    // --- 渲染防護：確保 Tilt 不為負值 ---
+    const tilt = Math.max(0, parseFloat(this.config.tilt) ?? 0.4);
+
     const entities = (this.config.entities || []).map(ent => typeof ent === 'string' ? { entity: ent, max: 100 } : ent).filter(ent => ent.entity);
     const dataValues = entities.map(ent => {
       const stateObj = this._hass.states[ent.entity];
       const val = parseFloat(stateObj?.state) || 0;
-      const precision = stateObj?.attributes?.display_precision !== undefined ? stateObj.attributes.display_precision : globalDecimals;
+      const precision = stateObj?.attributes?.display_precision ?? (this.config.decimal_places ?? 1);
       return parseFloat(val.toFixed(precision));
     });
-    const indicators = entities.map(ent => {
-      const stateObj = this._hass.states[ent.entity];
-      return { name: (ent.name || stateObj?.attributes?.friendly_name || ent.entity.split('.')[1]).toUpperCase(), max: ent.max || 100, unit: stateObj?.attributes?.unit_of_measurement || "" };
-    });
+    const indicators = entities.map(ent => ({ name: (ent.name || this._hass.states[ent.entity]?.attributes?.friendly_name || ent.entity.split('.')[1]).toUpperCase(), max: ent.max || 100, unit: this._hass.states[ent.entity]?.attributes?.unit_of_measurement || "" }));
     let visualPercents = [];
     if (dataMode === 'absolute') visualPercents = dataValues.map((v, i) => v / (indicators[i].max || 100));
     else if (dataMode === 'absolute_prop') { const absRatios = dataValues.map((v, i) => v / (indicators[i].max || 100)); const maxR = Math.max(...absRatios, 0.0001); visualPercents = absRatios.map(r => r / maxR); }
     else if (dataMode === 'relative_prop') { const maxV = Math.max(...dataValues, 0.0001); visualPercents = dataValues.map(v => v / maxV); }
-    const getP = (vPercent, i, cx, cy, radius, rotationRad, tilt) => { const count = indicators.length; const angle = (Math.PI * 2 / count) * i - Math.PI / 2 + rotationRad; const bx = cx + Math.cos(angle) * radius; const by = cy + (Math.sin(angle) * radius * tilt); return { bx, by, x: bx, y: by - (vPercent * (radius * maxHeightRatio)) }; };
+    const getP = (vPercent, i, cx, cy, radius, rotationRad, tilt) => { const count = indicators.length; const angle = (Math.PI * 2 / count) * i - Math.PI / 2 + rotationRad; const bx = cx + Math.cos(angle) * radius; const by = cy + (Math.sin(angle) * radius * tilt); return { bx, by, x: bx, y: by - (vPercent * (radius * (parseFloat(this.config.max_height_ratio)||0.8))) }; };
     let option = {};
     if (is3D) {
       const w = this.chart.getWidth(), h = this._container.clientHeight;
@@ -258,7 +259,7 @@ class Prism3DCard extends HTMLElement {
           const gridGroup = [], faceGroup = [], lineGroup = []; const count = indicators.length;
           if (count === 0) return { type: 'group', children: [] };
           const gridColor = this.config.grid_color || '#ffffff';
-          const gridLineOp = this.config.grid_line_opacity !== undefined ? parseFloat(this.config.grid_line_opacity) : 0.1;
+          const gridLineOp = parseFloat(this.config.grid_line_opacity) ?? 0.1;
           if (i === 0) { for (let s = 5; s >= 1; s--) { const stepR = radius * (s / 5), stepPts = []; for (let j = 0; j < count; j++) { const angle = (Math.PI * 2 / count) * j - Math.PI / 2 + rotationRad; const gx = cx + Math.cos(angle) * stepR, gy = cy + Math.sin(angle) * stepR * tilt; stepPts.push([gx, gy]); if (s === 5) gridGroup.push({ type: 'line', shape: { x1: cx, y1: cy, x2: gx, y2: gy }, style: { stroke: gridColor, opacity: gridLineOp }, silent: true }); }
           gridGroup.push({ type: 'polygon', z: 1, shape: { points: stepPts }, style: { fill: this._hexToRgba(gridColor, s%2===0?parseFloat(this.config.grid_opacity_2)||0.05:parseFloat(this.config.grid_opacity_1)||0.02), stroke: gridColor, opacity: gridLineOp }, silent: true }); } }
           const pCurr = pts[i], pPrev = pts[(i - 1 + count) % count], pNext = pts[(i + 1) % count];
@@ -275,12 +276,10 @@ class Prism3DCard extends HTMLElement {
         }, data: dataValues.map(v => v) }]
       };
     } else {
-      const gridColor = this.config.grid_color || '#ffffff';
-      const gridLineOp = this.config.grid_line_opacity !== undefined ? parseFloat(this.config.grid_line_opacity) : 0.1;
       option = {
         backgroundColor: 'transparent',
         tooltip: { show: true, trigger: 'item', backgroundColor: 'rgba(0, 0, 0, 0.8)', borderColor: 'rgba(255, 255, 255, 0.1)', textStyle: { color: '#fff' } },
-        radar: { indicator: indicators.map(ind => ({ ...ind, max: 1 })), startAngle: 90 + (parseFloat(this.config.rotation) || 0), shape: 'polygon', radius: `${parseFloat(this.config.chart_radius)||65}%`, center: ['50%', this.config.title ? '60%' : '50%'], axisName: { fontSize: parseFloat(this.config.text_size)||11, color: this.config.text_color || '#94a3b8', stroke: this.config.text_stroke_color || '#000', lineWidth: parseFloat(this.config.text_stroke_width) || 2 }, splitLine: { lineStyle: { color: this._hexToRgba(gridColor, gridLineOp) } }, splitArea: { show: true, areaStyle: { color: [this._hexToRgba(gridColor, parseFloat(this.config.grid_opacity_2)||0.05), this._hexToRgba(gridColor, parseFloat(this.config.grid_opacity_1)||0.02)].reverse() } } },
+        radar: { indicator: indicators.map(ind => ({ ...ind, max: 1 })), startAngle: 90 + (parseFloat(this.config.rotation) || 0), shape: 'polygon', radius: `${parseFloat(this.config.chart_radius)||65}%`, center: ['50%', this.config.title ? '60%' : '50%'], axisName: { fontSize: parseFloat(this.config.text_size)||11, color: this.config.text_color || '#94a3b8', stroke: this.config.text_stroke_color || '#000', lineWidth: parseFloat(this.config.text_stroke_width) || 2 }, splitLine: { lineStyle: { color: this._hexToRgba(this.config.grid_color || '#fff', parseFloat(this.config.grid_line_opacity) || 0.1) } }, splitArea: { show: true, areaStyle: { color: [this._hexToRgba(this.config.grid_color || '#fff', parseFloat(this.config.grid_opacity_2) || 0.05), this._hexToRgba(this.config.grid_color || '#fff', parseFloat(this.config.grid_opacity_1) || 0.02)].reverse() } } },
         series: [{ type: 'radar', data: [{ value: visualPercents, symbol: 'none', lineStyle: { color: mainColor, width: parseFloat(this.config.line_width)||2 }, areaStyle: { color: this._hexToRgba(mainColor, parseFloat(this.config.area_opacity)||0.4) } }] }]
       };
     }
