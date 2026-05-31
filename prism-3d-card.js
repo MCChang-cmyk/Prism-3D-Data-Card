@@ -1,6 +1,6 @@
 import "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js";
 
-const CARD_VERSION = "v1.9.8"; 
+const CARD_VERSION = "v1.9.9"; 
 
 console.info(
   `%c PRISM-3D-CARD %c ${CARD_VERSION} %c (dist) `,
@@ -27,7 +27,8 @@ class Prism3DCardEditor extends LitElement {
     const labels = {
       title: "卡片標題", mode: "顯示模式", background_color: "卡片背景顏色",
       card_height: "畫布整體高度", chart_radius: "圖表縮放比例 (底座)", 
-      max_height_ratio: "山峰最高凸起比例", data_mode: "數據計算模式", decimal_places: "顯示小數點位數",
+      max_height_ratio: "山峰最高凸起比例", data_mode: "數據計算模式", 
+      decimal_places: "顯示小數點位數", y_offset: "圖表垂直偏移 (Y-Offset)", // 新增標籤
       color: "圖表主色", rotation: "旋轉角度", drag_direction: "拖曳旋轉方向", 
       tilt: "傾斜視角 (俯視度)", line_width: "稜線寬度", area_opacity: "區域總透明度", 
       text_size: "文字字體大小", text_color: "文字顯示顏色", text_stroke_width: "文字外框粗細", 
@@ -89,7 +90,14 @@ class Prism3DCardEditor extends LitElement {
 
       <ha-form .hass=${this.hass} .data=${this._config} .schema=${[{ name: "title", selector: { text: {} } },{ name: "mode", selector: { select: { mode: "dropdown", options: [{ label: "3D 立體", value: "3d" }, { label: "2D 平面", value: "2d" }] } } }]} .computeLabel=${(s) => this._labelFor(s.name)} @value-changed=${this._valueChanged}></ha-form>
 
-      <ha-form .hass=${this.hass} .data=${this._config} .schema=${[{ type: "expandable", title: "數據處理與比例控制", schema: [{ name: "card_height", selector: { number: { min: 200, max: 1000, step: 10, unitOfMeasurement: "px", mode: "slider" } } },{ name: "chart_radius", selector: { number: { min: 10, max: 100, step: 1, mode: "slider" } } },{ name: "max_height_ratio", selector: { number: { min: 0.1, max: 3.0, step: 0.05, mode: "slider" } } },{ name: "data_mode", selector: { select: { mode: "dropdown", options: [{ label: "絕對值", value: "absolute" }, { label: "絕對值比例", value: "absolute_prop" }, { label: "相對值比例", value: "relative_prop" }] } } },{ name: "decimal_places", selector: { number: { min: 0, max: 5, step: 1, mode: "slider" } } }]}]} .computeLabel=${(s) => this._labelFor(s.name)} @value-changed=${this._valueChanged}></ha-form>
+      <ha-form .hass=${this.hass} .data=${this._config} .schema=${[{ type: "expandable", title: "數據處理與比例控制", schema: [
+          { name: "card_height", selector: { number: { min: 200, max: 1000, step: 10, unitOfMeasurement: "px", mode: "slider" } } },
+          { name: "chart_radius", selector: { number: { min: 10, max: 100, step: 1, mode: "slider" } } },
+          { name: "max_height_ratio", selector: { number: { min: 0.1, max: 3.0, step: 0.05, mode: "slider" } } },
+          { name: "y_offset", selector: { number: { min: -300, max: 300, step: 5, unitOfMeasurement: "px", mode: "slider" } } },
+          { name: "data_mode", selector: { select: { mode: "dropdown", options: [{ label: "絕對值", value: "absolute" }, { label: "絕對值比例", value: "absolute_prop" }, { label: "相對值比例", value: "relative_prop" }] } } },
+          { name: "decimal_places", selector: { number: { min: 0, max: 5, step: 1, mode: "slider" } } }
+        ]}]} .computeLabel=${(s) => this._labelFor(s.name)} @value-changed=${this._valueChanged}></ha-form>
 
       <div style="margin-top: 24px; font-weight: 500; font-size: 14px; color: var(--primary-text-color);">實體清單設定</div>
       <div class="entities-container">
@@ -118,7 +126,7 @@ class Prism3DCardEditor extends LitElement {
 class Prism3DCard extends HTMLElement {
   constructor() { super(); this._hoverIndex = -1; this._dragRotation = 0; this._isDragging = false; }
   static getConfigElement() { return document.createElement("prism-3d-card-editor"); }
-  static getStubConfig() { return { mode: "3d", data_mode: "absolute", background_color: "transparent", decimal_places: 1, max_height_ratio: 0.8, card_height: 350, color: "#E13460", rotation: 0, tilt: 0.4, entities: [], title: "數據稜鏡" }; }
+  static getStubConfig() { return { mode: "3d", data_mode: "absolute", y_offset: 0, background_color: "transparent", decimal_places: 1, max_height_ratio: 0.8, card_height: 350, color: "#E13460", rotation: 0, tilt: 0.4, entities: [], title: "數據稜鏡" }; }
   
   set hass(hass) { this._hass = hass; if (this.chart) this._updateData(); }
   setConfig(config) { this.config = config; if (!this.shadowRoot) { this._initChart(); } else { this._updateMainStyle(); this._updateData(); } }
@@ -133,7 +141,7 @@ class Prism3DCard extends HTMLElement {
     this._mainContainer.appendChild(this._titleElement);
 
     this._container = document.createElement('div');
-    this._container.style.cssText = `flex: 1; min-height: 0;`; // 畫布佔據剩餘空間
+    this._container.style.cssText = `flex: 1; min-height: 0;`; 
     this._mainContainer.appendChild(this._container);
     root.appendChild(this._mainContainer);
     this._updateMainStyle();
@@ -170,6 +178,9 @@ class Prism3DCard extends HTMLElement {
     const dataMode = this.config.data_mode || 'absolute';
     const rotationRad = ((parseFloat(this.config.rotation || 0) + this._dragRotation) * Math.PI) / 180;
     const tilt = Math.max(0, parseFloat(this.config.tilt) ?? 0.4);
+    
+    // --- 核心修正：Y 軸偏移量 ---
+    const yOffset = parseFloat(this.config.y_offset) || 0;
 
     const entities = (this.config.entities || []).map(ent => typeof ent === 'string' ? { entity: ent, max: 100 } : ent).filter(ent => ent.entity);
     const dataValues = entities.map(ent => { const stateObj = this._hass.states[ent.entity]; const val = parseFloat(stateObj?.state) || 0; const precision = stateObj?.attributes?.display_precision ?? (this.config.decimal_places ?? 1); return parseFloat(val.toFixed(precision)); });
@@ -179,13 +190,18 @@ class Prism3DCard extends HTMLElement {
     else if (dataMode === 'absolute_prop') { const absRatios = dataValues.map((v, i) => v / (indicators[i].max || 100)); const maxR = Math.max(...absRatios, 0.0001); visualPercents = absRatios.map(r => r / maxR); }
     else if (dataMode === 'relative_prop') { const maxV = Math.max(...dataValues, 0.0001); visualPercents = dataValues.map(v => v / maxV); }
 
-    const getP = (vPercent, i, cx, cy, radius, rotationRad, tilt) => { const count = indicators.length; const angle = (Math.PI * 2 / count) * i - Math.PI / 2 + rotationRad; const bx = cx + Math.cos(angle) * radius; const by = cy + (Math.sin(angle) * radius * tilt); return { bx, by, x: bx, y: by - (vPercent * (radius * (parseFloat(this.config.max_height_ratio)||0.8))) }; };
+    const getP = (vPercent, i, cx, cy, radius, rotationRad, tilt) => { 
+        const count = indicators.length; 
+        const angle = (Math.PI * 2 / count) * i - Math.PI / 2 + rotationRad; 
+        const bx = cx + Math.cos(angle) * radius; 
+        const by = cy + (Math.sin(angle) * radius * tilt) + yOffset; // 套用 yOffset
+        return { bx, by, x: bx, y: by - (vPercent * (radius * (parseFloat(this.config.max_height_ratio)||0.8))) }; 
+    };
     
     let option = {};
     if (is3D) {
       const w = this.chart.getWidth(), h = this._container.clientHeight;
-      // --- 核心修正：動態垂直置中 ---
-      const cx = w / 2, cy = h / 2 + (tilt * 20); // 根據傾斜度微調重心
+      const cx = w / 2, cy = h / 2 + (tilt * 20); 
       const radius = (parseFloat(this.config.chart_radius) || 65) / 100 * Math.min(w, h) * 0.55;
 
       option = {
@@ -200,13 +216,13 @@ class Prism3DCard extends HTMLElement {
           if (count === 0) return { type: 'group', children: [] };
           const gridColor = this.config.grid_color || '#ffffff';
           const gridLineOp = parseFloat(this.config.grid_line_opacity) ?? 0.1;
-          if (i === 0) { for (let s = 5; s >= 1; s--) { const stepR = radius * (s / 5), stepPts = []; for (let j = 0; j < count; j++) { const angle = (Math.PI * 2 / count) * j - Math.PI / 2 + rotationRad; const gx = cx + Math.cos(angle) * stepR, gy = cy + Math.sin(angle) * stepR * tilt; stepPts.push([gx, gy]); if (s === 5) gridGroup.push({ type: 'line', shape: { x1: cx, y1: cy, x2: gx, y2: gy }, style: { stroke: gridColor, opacity: gridLineOp }, silent: true }); }
+          if (i === 0) { for (let s = 5; s >= 1; s--) { const stepR = radius * (s / 5), stepPts = []; for (let j = 0; j < count; j++) { const angle = (Math.PI * 2 / count) * j - Math.PI / 2 + rotationRad; const gx = cx + Math.cos(angle) * stepR, gy = cy + (Math.sin(angle) * stepR * tilt) + yOffset; stepPts.push([gx, gy]); if (s === 5) gridGroup.push({ type: 'line', shape: { x1: cx, y1: cy + yOffset, x2: gx, y2: gy }, style: { stroke: gridColor, opacity: gridLineOp }, silent: true }); }
           gridGroup.push({ type: 'polygon', z: 1, shape: { points: stepPts }, style: { fill: this._hexToRgba(gridColor, s%2===0?parseFloat(this.config.grid_opacity_2)||0.05:parseFloat(this.config.grid_opacity_1)||0.02), stroke: gridColor, opacity: gridLineOp }, silent: true }); } }
           const pCurr = pts[i], pPrev = pts[(i - 1 + count) % count], pNext = pts[(i + 1) % count];
           const mLeft = { x: (pPrev.bx + pCurr.bx) / 2, y: (pPrev.by + pCurr.by) / 2 }, mRight = { x: (pCurr.bx + pNext.bx) / 2, y: (pCurr.by + pNext.by) / 2 };
-          const isHovered = (i === this._hoverIndex), opVar = parseFloat(this.config.opacity_variation) || 0.02, areaOp = parseFloat(this.config.area_opacity) || 0.4;
-          faceGroup.push({ type: 'polygon', z: 2, shape: { points: [[cx, cy], [mLeft.x, mLeft.y], [pCurr.x, pCurr.y]] }, style: { fill: this._hexToRgba(mainColor, Math.min(1, areaOp + opVar + (isHovered ? 0.3 : 0))) } });
-          faceGroup.push({ type: 'polygon', z: 2, shape: { points: [[cx, cy], [pCurr.x, pCurr.y], [mRight.x, mRight.y]] }, style: { fill: this._hexToRgba(mainColor, Math.min(1, areaOp - opVar + (isHovered ? 0.3 : 0))) } });
+          const isHovered = (i === this._hoverIndex), opVar = 0.02, areaOp = parseFloat(this.config.area_opacity) || 0.4;
+          faceGroup.push({ type: 'polygon', z: 2, shape: { points: [[cx, cy + yOffset], [mLeft.x, mLeft.y], [pCurr.x, pCurr.y]] }, style: { fill: this._hexToRgba(mainColor, Math.min(1, areaOp + opVar + (isHovered ? 0.3 : 0))) } });
+          faceGroup.push({ type: 'polygon', z: 2, shape: { points: [[cx, cy + yOffset], [pCurr.x, pCurr.y], [mRight.x, mRight.y]] }, style: { fill: this._hexToRgba(mainColor, Math.min(1, areaOp - opVar + (isHovered ? 0.3 : 0))) } });
           const lw = parseFloat(this.config.line_width) || 0;
           if (lw > 0) { lineGroup.push({ type: 'polyline', z: 3, shape: { points: [[mLeft.x, mLeft.y], [pCurr.x, pCurr.y], [mRight.x, mRight.y]] }, style: { stroke: mainColor, fill: 'none', lineWidth: lw, lineJoin: 'round' } }); lineGroup.push({ type: 'line', z: 1, shape: { x1: pCurr.bx, y1: pCurr.by, x2: pCurr.x, y2: pCurr.y }, style: { stroke: mainColor, lineDash: [2, 3], lineWidth: 1, opacity: isHovered ? 0.8 : 0.3 } }); }
           return { type: 'group', children: [...gridGroup, ...faceGroup, ...lineGroup] };
