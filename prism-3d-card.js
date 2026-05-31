@@ -1,6 +1,6 @@
 import "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js";
 
-const CARD_VERSION = "v1.9.6"; 
+const CARD_VERSION = "v1.9.7"; 
 
 console.info(
   `%c PRISM-3D-CARD %c ${CARD_VERSION} %c (dist) `,
@@ -25,7 +25,7 @@ class Prism3DCardEditor extends LitElement {
   
   _labelFor(name) {
     const labels = {
-      title: "卡片標題", mode: "顯示模式",
+      title: "卡片標題", mode: "顯示模式", background_color: "卡片背景顏色", // 新增背景顏色標籤
       card_height: "畫布整體高度", chart_radius: "圖表縮放比例 (底座)", 
       max_height_ratio: "山峰最高凸起比例", data_mode: "數據計算模式", decimal_places: "顯示小數點位數",
       color: "圖表主色", rotation: "旋轉角度", drag_direction: "拖曳旋轉方向", 
@@ -145,6 +145,7 @@ class Prism3DCardEditor extends LitElement {
             type: "expandable", title: "視覺與配色",
             schema: [
               { name: "color", selector: { text: {} } },
+              { name: "background_color", selector: { text: {} } }, // 新增背景顏色輸入
               { name: "line_width", selector: { number: { min: 0, max: 10, step: 1, mode: "slider" } } },
               { name: "area_opacity", selector: { number: { min: 0.1, max: 1, step: 0.05, mode: "slider" } } },
               { name: "text_size", selector: { number: { min: 8, max: 24, step: 1, mode: "slider" } } },
@@ -159,7 +160,6 @@ class Prism3DCardEditor extends LitElement {
             schema: [
               { name: "rotation", selector: { number: { min: 0, max: 360, step: 1, unitOfMeasurement: "°", mode: "slider" } } },
               { name: "drag_direction", selector: { select: { mode: "dropdown", options: [{ label: "正常 (隨手勢)", value: "normal" }, { label: "反向 (隨鏡頭)", value: "reverse" }] } } },
-              // --- 核心修正：將 Tilt 最小值改為 0 ---
               { name: "tilt", selector: { number: { min: 0, max: 0.9, step: 0.05, mode: "slider" } } }, 
             ]
           },
@@ -184,7 +184,7 @@ class Prism3DCardEditor extends LitElement {
 class Prism3DCard extends HTMLElement {
   constructor() { super(); this._hoverIndex = -1; this._dragRotation = 0; this._isDragging = false; }
   static getConfigElement() { return document.createElement("prism-3d-card-editor"); }
-  static getStubConfig() { return { mode: "3d", data_mode: "absolute", decimal_places: 1, max_height_ratio: 0.8, card_height: 350, color: "#E13460", rotation: 0, tilt: 0.4, entities: [], title: "數據稜鏡" }; }
+  static getStubConfig() { return { mode: "3d", data_mode: "absolute", background_color: "transparent", decimal_places: 1, max_height_ratio: 0.8, card_height: 350, color: "#E13460", rotation: 0, tilt: 0.4, entities: [], title: "數據稜鏡" }; }
   
   set hass(hass) { this._hass = hass; if (this.chart) this._updateData(); }
   setConfig(config) { this.config = config; if (!this.shadowRoot) { this._initChart(); } else { this._updateMainStyle(); this._updateTitle(); this._updateData(); } }
@@ -223,11 +223,10 @@ class Prism3DCard extends HTMLElement {
   _updateData() {
     if (!this._hass || !this.chart) return;
     const mainColor = this.config.color || '#E13460';
+    const bgColor = this.config.background_color || 'transparent'; // 套用背景顏色
     const is3D = this.config.mode === '3d';
     const dataMode = this.config.data_mode || 'absolute';
     const rotationRad = ((parseFloat(this.config.rotation || 0) + this._dragRotation) * Math.PI) / 180;
-    
-    // --- 渲染防護：確保 Tilt 不為負值 ---
     const tilt = Math.max(0, parseFloat(this.config.tilt) ?? 0.4);
 
     const entities = (this.config.entities || []).map(ent => typeof ent === 'string' ? { entity: ent, max: 100 } : ent).filter(ent => ent.entity);
@@ -243,13 +242,14 @@ class Prism3DCard extends HTMLElement {
     else if (dataMode === 'absolute_prop') { const absRatios = dataValues.map((v, i) => v / (indicators[i].max || 100)); const maxR = Math.max(...absRatios, 0.0001); visualPercents = absRatios.map(r => r / maxR); }
     else if (dataMode === 'relative_prop') { const maxV = Math.max(...dataValues, 0.0001); visualPercents = dataValues.map(v => v / maxV); }
     const getP = (vPercent, i, cx, cy, radius, rotationRad, tilt) => { const count = indicators.length; const angle = (Math.PI * 2 / count) * i - Math.PI / 2 + rotationRad; const bx = cx + Math.cos(angle) * radius; const by = cy + (Math.sin(angle) * radius * tilt); return { bx, by, x: bx, y: by - (vPercent * (radius * (parseFloat(this.config.max_height_ratio)||0.8))) }; };
+    
     let option = {};
     if (is3D) {
       const w = this.chart.getWidth(), h = this._container.clientHeight;
       const cx = w / 2, cy = h / 2 + 20;
       const radius = (parseFloat(this.config.chart_radius) || 65) / 100 * Math.min(w, h) * 0.6;
       option = {
-        backgroundColor: 'transparent',
+        backgroundColor: bgColor, // 3D 背景
         tooltip: { show: !this._isDragging, trigger: 'item', enterable: false, confine: true, appendToBody: false, transitionDuration: 0, position: (pos) => [pos[0] + 20, pos[1] + 20], extraCssText: 'pointer-events: none !important; z-index: 9999; border:none !important; box-shadow:none !important;', backgroundColor: 'rgba(0, 0, 0, 0.85)', borderColor: mainColor, borderWidth: 1, textStyle: { color: '#fff', fontSize: 12 },
           formatter: (p) => { const i = p.dataIndex; if (i < 0) return ''; return `<div style="padding: 5px;"><span style="color:#94a3b8; margin-right:15px;">${indicators[i].name}</span><b style="color:${mainColor}">${dataValues[i]} ${indicators[i].unit}</b></div>`; }
         },
@@ -276,10 +276,12 @@ class Prism3DCard extends HTMLElement {
         }, data: dataValues.map(v => v) }]
       };
     } else {
+      const gridColor = this.config.grid_color || '#ffffff';
+      const gridLineOp = this.config.grid_line_opacity !== undefined ? parseFloat(this.config.grid_line_opacity) : 0.1;
       option = {
-        backgroundColor: 'transparent',
+        backgroundColor: bgColor, // 2D 背景
         tooltip: { show: true, trigger: 'item', backgroundColor: 'rgba(0, 0, 0, 0.8)', borderColor: 'rgba(255, 255, 255, 0.1)', textStyle: { color: '#fff' } },
-        radar: { indicator: indicators.map(ind => ({ ...ind, max: 1 })), startAngle: 90 + (parseFloat(this.config.rotation) || 0), shape: 'polygon', radius: `${parseFloat(this.config.chart_radius)||65}%`, center: ['50%', this.config.title ? '60%' : '50%'], axisName: { fontSize: parseFloat(this.config.text_size)||11, color: this.config.text_color || '#94a3b8', stroke: this.config.text_stroke_color || '#000', lineWidth: parseFloat(this.config.text_stroke_width) || 2 }, splitLine: { lineStyle: { color: this._hexToRgba(this.config.grid_color || '#fff', parseFloat(this.config.grid_line_opacity) || 0.1) } }, splitArea: { show: true, areaStyle: { color: [this._hexToRgba(this.config.grid_color || '#fff', parseFloat(this.config.grid_opacity_2) || 0.05), this._hexToRgba(this.config.grid_color || '#fff', parseFloat(this.config.grid_opacity_1) || 0.02)].reverse() } } },
+        radar: { indicator: indicators.map(ind => ({ ...ind, max: 1 })), startAngle: 90 + (parseFloat(this.config.rotation) || 0), shape: 'polygon', radius: `${parseFloat(this.config.chart_radius)||65}%`, center: ['50%', this.config.title ? '60%' : '50%'], axisName: { fontSize: parseFloat(this.config.text_size)||11, color: this.config.text_color || '#94a3b8', stroke: this.config.text_stroke_color || '#000', lineWidth: parseFloat(this.config.text_stroke_width) || 2 }, splitLine: { lineStyle: { color: this._hexToRgba(gridColor, gridLineOp) } }, splitArea: { show: true, areaStyle: { color: [this._hexToRgba(gridColor, parseFloat(this.config.grid_opacity_2)||0.05), this._hexToRgba(gridColor, parseFloat(this.config.grid_opacity_1)||0.02)].reverse() } } },
         series: [{ type: 'radar', data: [{ value: visualPercents, symbol: 'none', lineStyle: { color: mainColor, width: parseFloat(this.config.line_width)||2 }, areaStyle: { color: this._hexToRgba(mainColor, parseFloat(this.config.area_opacity)||0.4) } }] }]
       };
     }
