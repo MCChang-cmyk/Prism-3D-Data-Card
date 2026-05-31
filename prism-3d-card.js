@@ -80,7 +80,7 @@ class Prism3DCardEditor extends LitElement {
         .entity-header { display: flex; align-items: center; padding: 10px 12px; cursor: pointer; min-height: 48px; }
         .entity-header:hover { background: var(--secondary-background-color); }
         .entity-info { flex: 1; display: flex; flex-direction: column; }
-        .entity-title { font-size: 14px; font-weight: 500; color: var(--primary-text-color); }
+        .entity-title { font-size: 10px; font-weight: 500; color: var(--primary-text-color); }
         .entity-id { font-size: 11px; color: var(--secondary-text-color); }
         .entity-content { padding: 16px; background: var(--secondary-background-color); border-top: 1px solid var(--divider-color); }
         ha-icon-button { --mdc-icon-button-size: 36px; color: var(--secondary-text-color); }
